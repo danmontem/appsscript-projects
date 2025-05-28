@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 10px;
+      }
+      .form-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      select, input, textarea {
+        width: 100%;
+        padding: 5px;
+        box-sizing: border-box;
+      }
+      textarea {
+        height: 80px;
+      }
+      .checkbox-group {
+        margin-top: 5px;
+      }
+      .buttons {
+        margin-top: 20px;
+        text-align: right;
+      }
+      button {
+        padding: 8px 15px;
+        cursor: pointer;
+      }
+      #status {
+        margin-top: 10px;
+        color: #e01b24;
+      }
+      .info-box {
+        background-color: #f8f9fa;
+        border-left: 3px solid #4285f4;
+        padding: 8px 12px;
+        margin-bottom: 15px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="info-box">
+      This tool will generate an indicators dataset using data from "Banco_indicadores_ACV" 
+      from an external document for the municipalities you specify.
+    </div>
+    
+    <div class="form-group">
+      <label for="sourceDocumentId">Source Document ID:</label>
+      <input type="text" id="sourceDocumentId" placeholder="Paste the Google Sheets Document ID here">
+      <div class="hint" style="font-size: 11px; color: #666; margin-top: 3px;">
+        Find this in the URL: https://docs.google.com/spreadsheets/d/<b>DOCUMENT_ID</b>/edit
+      </div>
+    </div>
+    
+    <div class="form-group">
+      <label for="targetSheet">Target Sheet:</label>
+      <select id="targetSheet"></select>
+    </div>
+    
+    <div class="form-group">
+      <label for="municipalities">Municipalities (one per line):</label>
+      <textarea id="municipalities" placeholder="Guadalajara&#10;Zapopan&#10;Tlaquepaque"></textarea>
+    </div>
+    
+    <div id="status"></div>
+    
+    <div class="buttons">
+      <button id="cancelBtn">Cancel</button>
+      <button id="generateBtn">Generate</button>
+    </div>
+    
+    <script>
+      // When the page loads
+      document.addEventListener('DOMContentLoaded', function() {
+        // Get sheet names
+        google.script.run.withSuccessHandler(populateSheetDropdowns).getSheetNames();
+        
+        // Handle generate button click
+        document.getElementById('generateBtn').addEventListener('click', generateDataset);
+        
+        // Handle cancel button click
+        document.getElementById('cancelBtn').addEventListener('click', function() {
+          google.script.host.close();
+        });
+      });
+      
+      function populateSheetDropdowns(sheetNames) {
+        const targetSelect = document.getElementById('targetSheet');
+        
+        sheetNames.forEach(function(name) {
+          const targetOption = document.createElement('option');
+          targetOption.value = name;
+          targetOption.textContent = name;
+          targetSelect.appendChild(targetOption);
+        });
+      }
+      
+      function generateDataset() {
+        const statusDiv = document.getElementById('status');
+        statusDiv.textContent = 'Generating indicators dataset...';
+        
+        // Get source document ID
+        const sourceDocumentId = document.getElementById('sourceDocumentId').value.trim();
+        if (!sourceDocumentId) {
+          statusDiv.textContent = 'Error: Please enter the source document ID';
+          statusDiv.style.color = '#e01b24';
+          return;
+        }
+        
+        // Get municipalities as an array, removing empty lines
+        const municipalitiesText = document.getElementById('municipalities').value;
+        const municipalities = municipalitiesText
+          .split('\n')
+          .map(m => m.trim())
+          .filter(m => m.length > 0);
+        
+        if (municipalities.length === 0) {
+          statusDiv.textContent = 'Error: Please enter at least one municipality';
+          statusDiv.style.color = '#e01b24';
+          return;
+        }
+        
+        const params = {
+          sourceDocumentId: sourceDocumentId,
+          targetSheet: document.getElementById('targetSheet').value,
+          municipalities: municipalities
+        };
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            if (result.success) {
+              statusDiv.textContent = result.message;
+              statusDiv.style.color = '#2ec27e';
+              setTimeout(function() {
+                google.script.host.close();
+              }, 2000);
+            } else {
+              statusDiv.textContent = 'Error: ' + result.message;
+              statusDiv.style.color = '#e01b24';
+            }
+          })
+          .withFailureHandler(function(error) {
+            statusDiv.textContent = 'Error: ' + error.message;
+            statusDiv.style.color = '#e01b24';
+          })
+          .generateIndicatorsDataset(params);
+      }
+    </script>
+  </body>
+</html>
