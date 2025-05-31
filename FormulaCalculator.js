@@ -1,14 +1,12 @@
 /**
- * Formula Calculation Functions
+ * FormulaCalculator.js
+ * Cleaned and optimized formula calculation functions
+ * Dependencies: CommonHelpers.js
  */
 
-/**
- * Test function for debugging component values
- */
-function testComponentValue() {
-  const result = COMPONENT_VALUE("MRez", "ENE24", "Apodaca");
-  console.log("Result: " + result);
-}
+// =============================================
+// MAIN CALCULATION FUNCTIONS
+// =============================================
 
 /**
  * Enhanced COMPONENT_VALUE function that handles string values like "SD"
@@ -31,7 +29,7 @@ function COMPONENT_VALUE(componentCode, month, municipio) {
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   
-  // Convert month code to actual month name
+  // Convert month code to actual month name (using CommonHelpers)
   const fullMonth = convertMonthCode(month);
   
   // Find column indices
@@ -50,7 +48,6 @@ function COMPONENT_VALUE(componentCode, month, municipio) {
       const value = row[monthCol];
       
       // Return the value as-is (whether it's numeric, "SD", "información reservada", etc.)
-      // Let the calculation functions handle the logic for combining values
       return value;
     }
   }
@@ -82,18 +79,12 @@ function COMPONENT_SUM(componentCode, startMonth, endMonth, municipio) {
   const municipioCol = 0;
   const componentCodeCol = 3;
   
-  // Map of month names to their numerical order
-  const monthOrder = {
-    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
-    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10, "noviembre": 11, "diciembre": 12
-  };
-  
-  // Parse start and end months
+  // Parse start and end months (using CommonHelpers MONTH_ORDER)
   const [startMonthName, startYear] = startMonth.toLowerCase().split(" ");
   const [endMonthName, endYear] = endMonth.toLowerCase().split(" ");
   
-  const startDate = new Date(parseInt(startYear), monthOrder[startMonthName] - 1);
-  const endDate = new Date(parseInt(endYear), monthOrder[endMonthName] - 1);
+  const startDate = new Date(parseInt(startYear), MONTH_ORDER[startMonthName] - 1);
+  const endDate = new Date(parseInt(endYear), MONTH_ORDER[endMonthName] - 1);
   
   // Find relevant month columns within the range
   const monthColumns = [];
@@ -103,7 +94,7 @@ function COMPONENT_SUM(componentCode, startMonth, endMonth, municipio) {
     if (!header.includes(" 20")) continue;
     
     const [headerMonthName, headerYear] = header.split(" ");
-    const headerDate = new Date(parseInt(headerYear), monthOrder[headerMonthName] - 1);
+    const headerDate = new Date(parseInt(headerYear), MONTH_ORDER[headerMonthName] - 1);
     
     if (headerDate >= startDate && headerDate <= endDate) {
       monthColumns.push(j);
@@ -144,7 +135,6 @@ function COMPONENT_SUM(componentCode, startMonth, endMonth, municipio) {
         throw new Error(`Mixed data types found for ${componentCode} in ${municipio}: numeric values and strings (${stringValues.join(", ")})`);
       } else if (stringValues.length > 0 && values.length === 0) {
         // All non-empty values are strings - return the first string found
-        // or a combined indicator if there are different types
         const uniqueStrings = [...new Set(stringValues)];
         if (uniqueStrings.length === 1) {
           return uniqueStrings[0]; // All strings are the same (e.g., all "SD")
@@ -164,10 +154,191 @@ function COMPONENT_SUM(componentCode, startMonth, endMonth, municipio) {
   throw new Error(`Component "${componentCode}" not found for municipality "${municipio}"`);
 }
 
-/** Test sum function */
-function testComponentSum() {
-  const result = COMPONENT_SUM("MRez", "enero 2024", "diciembre 2024", "Apodaca");
-  console.log("Sum result: " + result);
+/**
+ * Custom function to calculate an indicator with complex formulas
+ * Enhanced CALCULATE_INDICATOR function that handles string values appropriately
+ * 
+ * @param {string} formula - The formula to calculate
+ * @param {string} municipio - The municipality name
+ * @param {number=} timestamp - Optional timestamp parameter for auto-refresh
+ * @return The calculated indicator value or a string indicating data issues
+ * @customfunction
+ */
+function CALCULATE_INDICATOR(formula, municipio, timestamp) {
+  if (timestamp === undefined) {
+    timestamp = new Date().getTime();
+  }
+  
+  console.log("CALCULATE_INDICATOR called with formula: " + formula);
+  console.log("Municipality: " + municipio);
+  
+  if (!formula || !municipio) {
+    throw new Error("Formula and municipality must be provided");
+  }
+  
+  try {
+    // Process the formula with the enhanced formula processor
+    return processComplexFormula(formula, municipio);
+  } catch (error) {
+    // If there's an error and it mentions data issues, return a descriptive message
+    if (error.message.includes("Mixed data types") || 
+        error.message.includes("SD") || 
+        error.message.includes("información reservada")) {
+      return error.message;
+    } else {
+      throw error; // Re-throw other types of errors
+    }
+  }
+}
+
+// =============================================
+// FORMULA PROCESSING ENGINE
+// =============================================
+
+/**
+ * Processes a complex formula with operators like +, -, *, /, etc.
+ * Enhanced processComplexFormula that handles string values intelligently
+ * 
+ * @param {string} formula - The formula to process
+ * @param {string} municipio - The municipality name
+ * @return The calculated result
+ */
+function processComplexFormula(formula, municipio) {
+  if (!formula) {
+    throw new Error("Formula cannot be undefined or empty");
+  }
+  
+  console.log("Processing formula: " + formula);
+  
+  // Check if the entire formula is already a string value
+  if (!/[+\-*/():]|SUM|AVG|SINGLE|MAX|MIN/.test(formula)) {
+    return formula;
+  }
+  
+  // Handle nested function calls like SUM() or SINGLE()
+  const functionRegex = /(SUM|SINGLE|AVG|MAX|MIN)\(([^()]+)\)/g;
+  let modifiedFormula = formula;
+  let functionMatch;
+  
+  while ((functionMatch = functionRegex.exec(formula)) !== null) {
+    const [fullMatch, functionName, content] = functionMatch;
+    console.log(`Found function: ${functionName}(${content})`);
+    
+    let result;
+    try {
+      result = processFunction(functionName, content, municipio);
+    } catch (e) {
+      return `ERROR: ${e.message}`;
+    }
+    
+    console.log(`Function ${functionName} result: ${result}`);
+    
+    // If function returns a string, return it immediately
+    if (typeof result === "string" && isNaN(result)) {
+      return result;
+    }
+    
+    // Replace the function call with its result
+    modifiedFormula = modifiedFormula.replace(fullMatch, result);
+    functionRegex.lastIndex = 0;
+    formula = modifiedFormula;
+  }
+  
+  // Handle remaining component references
+  modifiedFormula = processComponentReferences(modifiedFormula, municipio);
+  
+  // If we got a string result from component processing, return it
+  if (typeof modifiedFormula === "string" && !/^[0-9.+\-*/()E\s]*$/.test(modifiedFormula)) {
+    return modifiedFormula;
+  }
+  
+  console.log("Final formula to evaluate: " + modifiedFormula);
+  
+  // Clean the formula for mathematical evaluation
+  modifiedFormula = modifiedFormula.replace(/\s+/g, "");
+  
+  // Final check before eval - make sure it only contains mathematical operators
+  if (!/^[0-9.+\-*/()E]*$/.test(modifiedFormula)) {
+    return `ERROR: Non-mathematical characters found: ${modifiedFormula}`;
+  }
+  
+  // Evaluate the resulting mathematical expression
+  try {
+    const result = eval(modifiedFormula);
+    return result;
+  } catch (e) {
+    return `ERROR: Mathematical evaluation failed - ${e.message}`;
+  }
+}
+
+/**
+ * Process a specific function (SUM, AVG, etc.) with enhanced string handling
+ */
+function processFunction(functionName, content, municipio) {
+  const components = content.split(",").map(c => c.trim());
+  const values = components.map(component => evaluateComponentPart(component, municipio));
+  
+  // Separate string and numeric values
+  const stringValues = values.filter(v => typeof v === "string" && isNaN(v));
+  const numericValues = values.filter(v => typeof v === "number" || !isNaN(v)).map(v => Number(v));
+  
+  // Handle mixed data types
+  if (stringValues.length > 0 && numericValues.length > 0) {
+    return `ERROR: Mixed data types - ${stringValues.join(", ")}`;
+  } else if (stringValues.length > 0) {
+    const uniqueStrings = [...new Set(stringValues)];
+    return uniqueStrings.length === 1 ? uniqueStrings[0] : `MIXED: ${uniqueStrings.join(", ")}`;
+  }
+  
+  // Process numeric values based on function type
+  switch (functionName) {
+    case "SUM":
+      return numericValues.reduce((sum, val) => sum + val, 0);
+    case "AVG":
+      return numericValues.reduce((sum, val) => sum + val, 0) / numericValues.length;
+    case "MAX":
+      return Math.max(...numericValues);
+    case "MIN":
+      return Math.min(...numericValues);
+    case "SINGLE":
+      // For SINGLE, handle the special case
+      const [code, monthCode] = content.split(":");
+      const month = convertMonthCode(monthCode);
+      return COMPONENT_VALUE(code, month, municipio);
+    default:
+      throw new Error(`Unknown function: ${functionName}`);
+  }
+}
+
+/**
+ * Process component references in formula
+ */
+function processComponentReferences(formula, municipio) {
+  const componentRefRegex = /([A-Za-z0-9-_]+):([A-Za-z0-9-]+(-[A-Za-z0-9-]+)?)/g;
+  let modifiedFormula = formula;
+  let componentMatch;
+  
+  while ((componentMatch = componentRefRegex.exec(modifiedFormula)) !== null) {
+    const fullMatch = componentMatch[0];
+    console.log("Found component reference: " + fullMatch);
+    
+    try {
+      const componentValue = evaluateComponentPart(fullMatch, municipio);
+      console.log("Component value: " + componentValue);
+      
+      // If it's a string, return it immediately - don't try to continue processing
+      if (typeof componentValue === "string" && isNaN(componentValue)) {
+        return componentValue;
+      }
+      
+      modifiedFormula = modifiedFormula.replace(fullMatch, componentValue);
+      componentRefRegex.lastIndex = 0;
+    } catch (e) {
+      return `ERROR: ${e.message}`;
+    }
+  }
+  
+  return modifiedFormula;
 }
 
 /**
@@ -204,41 +375,9 @@ function evaluateComponentPart(componentPart, municipio) {
   }
 }
 
-/**
- * Custom function to calculate an indicator with complex formulas
- * Modified to auto-refresh when data changes
- * Enhanced CALCULATE_INDICATOR function that handles string values appropriately
- * 
- * @param {string} formula - The formula to calculate
- * @param {string} municipio - The municipality name
- * @param {number=} timestamp - Optional timestamp parameter
- * @return The calculated indicator value or a string indicating data issues
- * @customfunction
- */
-function CALCULATE_INDICATOR(formula, municipio, timestamp) {
-  if (timestamp === undefined) {
-    timestamp = new Date().getTime();
-  }
-  
-  console.log("CALCULATE_INDICATOR called with formula: " + formula);
-  console.log("Municipality: " + municipio);
-  
-  if (!formula || !municipio) {
-    throw new Error("Formula and municipality must be provided");
-  }
-  
-  try {
-    // Process the formula with the enhanced formula processor
-    return processComplexFormula(formula, municipio);
-  } catch (error) {
-    // If there's an error and it mentions data issues, return a descriptive message
-    if (error.message.includes("Mixed data types") || error.message.includes("SD") || error.message.includes("información reservada")) {
-      return error.message;
-    } else {
-      throw error; // Re-throw other types of errors
-    }
-  }
-}
+// =============================================
+// HELPER AND UTILITY FUNCTIONS
+// =============================================
 
 /**
  * Helper function to get component data for change detection
@@ -280,210 +419,22 @@ function getComponentData(componentCode, municipio) {
   throw new Error(`Component "${componentCode}" not found for municipality "${municipio}"`);
 }
 
+// =============================================
+// TESTING FUNCTIONS
+// =============================================
+
 /**
- * Processes a complex formula with operators like +, -, *, /, etc.
- * 
- * @param {string} formula - The formula to process
- * @param {string} municipio - The municipality name
- * @return The calculated result
- * Enhanced processComplexFormula that handles string values intelligently
+ * Test function for debugging component values
  */
-function processComplexFormula(formula, municipio) {
-  if (!formula) {
-    throw new Error("Formula cannot be undefined or empty");
-  }
-  
-  console.log("Processing formula: " + formula);
-  
-  // Check if the entire formula is already a string value (like "SD", "información reservada", etc.)
-  // If it doesn't contain any operators or function calls, it might be a direct string
-  if (!/[+\-*/():]|SUM|AVG|SINGLE|MAX|MIN/.test(formula)) {
-    // It's likely a direct string value
-    return formula;
-  }
-  
-  // First handle any nested function calls like SUM() or SINGLE()
-  const functionRegex = /(SUM|SINGLE|AVG|MAX|MIN)\(([^()]+)\)/g;
-  let modifiedFormula = formula;
-  let functionMatch;
-  
-  while ((functionMatch = functionRegex.exec(formula)) !== null) {
-    const [fullMatch, functionName, content] = functionMatch;
-    console.log(`Found function: ${functionName}(${content})`);
-    
-    let result;
-    try {
-      if (functionName === "SUM") {
-        const components = content.split(",").map(c => c.trim());
-        const values = components.map(component => evaluateComponentPart(component, municipio));
-        
-        // Check if any values are strings
-        const stringValues = values.filter(v => typeof v === "string");
-        const numericValues = values.filter(v => typeof v === "number");
-        
-        if (stringValues.length > 0 && numericValues.length > 0) {
-          return `ERROR: Mixed data types - ${stringValues.join(", ")}`;
-        } else if (stringValues.length > 0) {
-          const uniqueStrings = [...new Set(stringValues)];
-          return uniqueStrings.length === 1 ? uniqueStrings[0] : `MIXED: ${uniqueStrings.join(", ")}`;
-        } else {
-          result = numericValues.reduce((sum, val) => sum + val, 0);
-        }
-      } 
-      else if (functionName === "SINGLE") {
-        const [code, monthCode] = content.split(":");
-        const month = convertMonthCode(monthCode);
-        const value = COMPONENT_VALUE(code, month, municipio);
-        
-        // If SINGLE returns a string, return it immediately
-        if (typeof value === "string") {
-          return value;
-        }
-        result = value;
-      }
-      else if (functionName === "AVG") {
-        const components = content.split(",").map(c => c.trim());
-        const values = components.map(component => evaluateComponentPart(component, municipio));
-        
-        const stringValues = values.filter(v => typeof v === "string");
-        const numericValues = values.filter(v => typeof v === "number");
-        
-        if (stringValues.length > 0 && numericValues.length > 0) {
-          return `ERROR: Mixed data types - ${stringValues.join(", ")}`;
-        } else if (stringValues.length > 0) {
-          const uniqueStrings = [...new Set(stringValues)];
-          return uniqueStrings.length === 1 ? uniqueStrings[0] : `MIXED: ${uniqueStrings.join(", ")}`;
-        } else {
-          result = numericValues.reduce((sum, val) => sum + val, 0) / numericValues.length;
-        }
-      }
-      else if (functionName === "MAX" || functionName === "MIN") {
-        const components = content.split(",").map(c => c.trim());
-        const values = components.map(component => evaluateComponentPart(component, municipio));
-        
-        const stringValues = values.filter(v => typeof v === "string");
-        const numericValues = values.filter(v => typeof v === "number");
-        
-        if (stringValues.length > 0) {
-          const uniqueStrings = [...new Set(stringValues)];
-          return uniqueStrings.length === 1 ? uniqueStrings[0] : `MIXED: ${uniqueStrings.join(", ")}`;
-        } else {
-          result = functionName === "MAX" ? Math.max(...numericValues) : Math.min(...numericValues);
-        }
-      }
-    } catch (e) {
-      return `ERROR: ${e.message}`;
-    }
-    
-    console.log(`Function ${functionName} result: ${result}`);
-    
-    // Replace the function call with its result
-    modifiedFormula = modifiedFormula.replace(fullMatch, result);
-    functionRegex.lastIndex = 0;
-    formula = modifiedFormula;
-  }
-  
-  // Handle remaining component references
-  const componentRefRegex = /([A-Za-z0-9-_]+):([A-Za-z0-9-]+(-[A-Za-z0-9-]+)?)/g;
-  let componentMatch;
-  
-  while ((componentMatch = componentRefRegex.exec(modifiedFormula)) !== null) {
-    const fullMatch = componentMatch[0];
-    console.log("Found component reference: " + fullMatch);
-    
-    try {
-      const componentValue = evaluateComponentPart(fullMatch, municipio);
-      console.log("Component value: " + componentValue);
-      
-      // If it's a string, return it immediately - don't try to continue processing
-      if (typeof componentValue === "string") {
-        return componentValue;
-      }
-      
-      modifiedFormula = modifiedFormula.replace(fullMatch, componentValue);
-      componentRefRegex.lastIndex = 0;
-    } catch (e) {
-      return `ERROR: ${e.message}`;
-    }
-  }
-  
-  console.log("Final formula to evaluate: " + modifiedFormula);
-  
-  // At this point, if we still have a string that's not purely mathematical, return it
-  if (typeof modifiedFormula === "string") {
-    // Check if it's a string that contains non-mathematical characters
-    if (!/^[0-9.+\-*/()E\s]*$/.test(modifiedFormula)) {
-      return modifiedFormula;
-    }
-  }
-  
-  // Clean the formula for mathematical evaluation
-  modifiedFormula = modifiedFormula.replace(/\s+/g, "");
-  
-  // Final check before eval - make sure it only contains mathematical operators
-  if (!/^[0-9.+\-*/()E]*$/.test(modifiedFormula)) {
-    return `ERROR: Non-mathematical characters found: ${modifiedFormula}`;
-  }
-  
-  // Evaluate the resulting mathematical expression
-  try {
-    const result = eval(modifiedFormula);
-    return result;
-  } catch (e) {
-    return `ERROR: Mathematical evaluation failed - ${e.message}`;
-  }
+function testComponentValue() {
+  const result = COMPONENT_VALUE("MRez", "ENE24", "Apodaca");
+  console.log("Result: " + result);
 }
 
 /**
- * Helper function to convert month codes to month names
- * This updated version handles both codes and full month names
+ * Test sum function
  */
-function convertMonthCode(code) {
-  // If the input is already a full month name (contains a space), return it as is
-  if (code.includes(" ")) {
-    return code.toLowerCase(); // Ensure it's lowercase for consistency
-  }
-
-  // Otherwise, handle the code format (OCT24 or OCT2024)
-  let monthPart, yearPart;
-  
-  if (code.length === 5) {
-    // Format is OCT24
-    monthPart = code.substring(0, 3).toUpperCase();
-    yearPart = code.substring(3);
-  } else if (code.length === 7) {
-    // Format is OCT2024
-    monthPart = code.substring(0, 3).toUpperCase();
-    yearPart = code.substring(3);
-  } else {
-    throw new Error(`Invalid month code format: ${code}. Use format OCT24 or OCT2024`);
-  }
-  
-  // Map month codes to names
-  const monthMap = {
-    "ENE": "enero",
-    "FEB": "febrero",
-    "MAR": "marzo",
-    "ABR": "abril",
-    "MAY": "mayo",
-    "JUN": "junio",
-    "JUL": "julio",
-    "AGO": "agosto",
-    "SEP": "septiembre", 
-    "OCT": "octubre",
-    "NOV": "noviembre",
-    "DIC": "diciembre"
-  };
-  
-  const monthName = monthMap[monthPart];
-  if (!monthName) {
-    throw new Error(`Invalid month code: ${monthPart}`);
-  }
-  
-  // Handle both 2-digit and 4-digit year formats
-  if (yearPart.length === 2) {
-    return `${monthName} 20${yearPart}`;
-  } else {
-    return `${monthName} ${yearPart}`;
-  }
+function testComponentSum() {
+  const result = COMPONENT_SUM("MRez", "enero 2024", "diciembre 2024", "Apodaca");
+  console.log("Sum result: " + result);
 }

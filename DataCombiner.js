@@ -1,6 +1,7 @@
 /**
- * DataCombiner.gs
- * Functions for combining components and indicators datasets
+ * DataCombiner.js
+ * Cleaned and optimized functions for combining components and indicators datasets
+ * Dependencies: CommonHelpers.js
  * Updated with formula-preserving refresh capability
  */
 
@@ -94,56 +95,8 @@ function concatAndOrderByIndicator() {
   // Progress indicator
   ui.alert('Processing...', 'Combining and sorting data. Please wait.', ui.ButtonSet.OK);
 
-  // Simple column mapping - tipo de dato at the end
-  const columnasMapeo = {
-    "municipio": { hoja1: "municipio", hoja2: "municipio" },
-    "id_indicador": { hoja1: "id_indicador", hoja2: "id_indicador" },
-    "eje": { hoja1: "eje", hoja2: "eje" },
-    "tema": { hoja1: "tema", hoja2: "tema" },
-    "nombre": { hoja1: "nombre_componente", hoja2: "nombre_indicador" },
-    "codigo": { hoja1: "codigo_componente", hoja2: "calculo_indicador"},
-    "tipo de dato": { hoja1: null, hoja2: null }
-  };
-
-  const columnasDestino = Object.keys(columnasMapeo);
-
-  // Function to extract mapped data
-  function extraerDatosMapeados(hoja, fuente, etiquetaTipo) {
-    try {
-      const datos = hoja.getDataRange().getValues();
-      const encabezado = datos[0];
-      const cuerpo = datos.slice(1);
-
-      const indices = columnasDestino
-        .filter(col => col !== "tipo de dato")
-        .map(col => {
-          const nombreCol = columnasMapeo[col][fuente];
-          const idx = encabezado.indexOf(nombreCol);
-          if (idx === -1) {
-            throw new Error(`Column "${nombreCol}" not found in sheet "${hoja.getName()}"`);
-          }
-          return idx;
-        });
-
-      return cuerpo.map(fila => {
-        const datosFila = indices.map((i, colIndex) => {
-          const value = fila[i];
-          const columnName = columnasDestino.filter(col => col !== "tipo de dato")[colIndex];
-          
-          // Special handling for id_indicador: convert empty/blank to 0
-          if (columnName === "id_indicador" && (value === "" || value === null || value === undefined)) {
-            return 0;
-          }
-          
-          return value;
-        });
-        datosFila.push(etiquetaTipo); // Add "tipo de dato" at the end
-        return datosFila;
-      });
-    } catch (error) {
-      throw new Error(`Error processing sheet "${hoja.getName()}": ${error.message}`);
-    }
-  }
+  // Use standardized column mapping from CommonHelpers
+  const columnasDestino = Object.keys(STANDARD_COLUMN_MAPPING);
 
   try {
     // Get data from both sheets
@@ -239,6 +192,47 @@ function concatAndOrderByIndicator() {
 }
 
 /**
+ * Function to extract mapped data with enhanced error handling
+ * Uses CommonHelpers functions for consistency
+ */
+function extraerDatosMapeados(hoja, fuente, etiquetaTipo) {
+  try {
+    const datos = hoja.getDataRange().getValues();
+    const encabezado = datos[0];
+    const cuerpo = datos.slice(1);
+
+    const indices = Object.keys(STANDARD_COLUMN_MAPPING)
+      .filter(col => col !== "tipo de dato")
+      .map(col => {
+        const nombreCol = STANDARD_COLUMN_MAPPING[col][fuente];
+        const idx = encabezado.indexOf(nombreCol);
+        if (idx === -1) {
+          throw new Error(`Column "${nombreCol}" not found in sheet "${hoja.getName()}"`);
+        }
+        return idx;
+      });
+
+    return cuerpo.map(fila => {
+      const datosFila = indices.map((i, colIndex) => {
+        const value = fila[i];
+        const columnName = Object.keys(STANDARD_COLUMN_MAPPING).filter(col => col !== "tipo de dato")[colIndex];
+        
+        // Special handling for id_indicador: convert empty/blank to 0 using CommonHelpers
+        if (columnName === "id_indicador") {
+          return getValueOrZero(value);
+        }
+        
+        return getValueOrEmpty(value);
+      });
+      datosFila.push(etiquetaTipo); // Add "tipo de dato" at the end
+      return datosFila;
+    });
+  } catch (error) {
+    throw new Error(`Error processing sheet "${hoja.getName()}": ${error.message}`);
+  }
+}
+
+/**
  * ENHANCED: Smart refresh function that preserves formulas in calculation columns
  * Detects and preserves formula columns while refreshing core data
  */
@@ -281,8 +275,8 @@ function refreshConcatenatedDataset() {
   console.log('Analyzing current sheet structure...');
   console.log('Current headers:', currentHeaders);
   
-  // Identify core columns vs calculation columns
-  const coreColumns = ["municipio", "id_indicador", "eje", "tema", "nombre", "codigo", "tipo de dato"];
+  // Identify core columns vs calculation columns using CommonHelpers
+  const coreColumns = Object.keys(STANDARD_COLUMN_MAPPING);
   const coreColumnIndices = [];
   const calculationColumns = [];
   
@@ -349,67 +343,6 @@ function refreshConcatenatedDataset() {
   // Progress indicator
   ui.alert('Refreshing...', 'Updating dataset while preserving formulas. Please wait.', ui.ButtonSet.OK);
   
-  // Column mapping for data extraction (same as original)
-  const columnasMapeo = {
-    "municipio": { hoja1: "municipio", hoja2: "municipio" },
-    "id_indicador": { hoja1: "id_indicador", hoja2: "id_indicador" },
-    "eje": { hoja1: "eje", hoja2: "eje" },
-    "tema": { hoja1: "tema", hoja2: "tema" },
-    "nombre": { hoja1: "nombre_componente", hoja2: "nombre_indicador" },
-    "codigo": { hoja1: "codigo_componente", hoja2: "calculo_indicador"},
-    "tipo de dato": { hoja1: null, hoja2: null }
-  };
-
-  const extractionOrder = Object.keys(columnasMapeo);
-
-  // Extract fresh data (same logic as original refresh)
-  function extraerDatosMapeados(hoja, fuente, etiquetaTipo) {
-    try {
-      const datos = hoja.getDataRange().getValues();
-      const encabezado = datos[0];
-      const cuerpo = datos.slice(1);
-
-      const indices = extractionOrder
-        .filter(col => col !== "tipo de dato")
-        .map(col => {
-          const nombreCol = columnasMapeo[col][fuente];
-          const idx = encabezado.indexOf(nombreCol);
-          if (idx === -1) {
-            throw new Error(`Column "${nombreCol}" not found in sheet "${hoja.getName()}"`);
-          }
-          return idx;
-        });
-
-      return cuerpo.map(fila => {
-        const rowData = {};
-        
-        extractionOrder.forEach((colName, idx) => {
-          if (colName === "tipo de dato") {
-            rowData[colName] = etiquetaTipo;
-          } else {
-            const value = fila[indices[idx]];
-            
-            // Handle id_indicador properly
-            if (colName === "id_indicador") {
-              if (value === "" || value === null || value === undefined) {
-                rowData[colName] = 0;
-              } else {
-                const numValue = Number(value);
-                rowData[colName] = isNaN(numValue) ? 0 : numValue;
-              }
-            } else {
-              rowData[colName] = value;
-            }
-          }
-        });
-        
-        return rowData;
-      });
-    } catch (error) {
-      throw new Error(`Error processing sheet "${hoja.getName()}": ${error.message}`);
-    }
-  }
-
   try {
     // Get fresh data from both sheets
     const datos1 = extraerDatosMapeados(componentsSheet, "hoja1", "Componente");
@@ -418,14 +351,14 @@ function refreshConcatenatedDataset() {
 
     // Sort data (same as original)
     datosCombinados.sort((a, b) => {
-      const compMun = a.municipio.toString().localeCompare(b.municipio.toString(), 'es');
+      const compMun = a[0].toString().localeCompare(b[0].toString(), 'es'); // municipio
       if (compMun !== 0) return compMun;
       
-      const compId = Number(a.id_indicador) - Number(b.id_indicador);
+      const compId = getValueOrZero(a[1]) - getValueOrZero(b[1]); // id_indicador
       if (compId !== 0) return compId;
       
-      if (a["tipo de dato"] === "Componente" && b["tipo de dato"] === "Indicador") return -1;
-      if (a["tipo de dato"] === "Indicador" && b["tipo de dato"] === "Componente") return 1;
+      if (a[6] === "Componente" && b[6] === "Indicador") return -1; // tipo de dato
+      if (a[6] === "Indicador" && b[6] === "Componente") return 1;
       
       return 0;
     });
@@ -435,42 +368,18 @@ function refreshConcatenatedDataset() {
     const finalData = [targetColumnOrder]; // Headers first
     
     // Create lookup for preserved formulas based on row key
-    const formulaLookup = {};
-    
-    // Build lookup from current data
-    currentRows.forEach((row, index) => {
-      const municipio = row[currentHeaders.indexOf("municipio")];
-      const indicadorId = row[currentHeaders.indexOf("id_indicador")];
-      const tipo = row[currentHeaders.indexOf("tipo de dato")];
-      const codigo = row[currentHeaders.indexOf("codigo")];
-      
-      // Normalize indicadorId for consistent keys
-      const normalizedIndicadorId = (indicadorId === "" || indicadorId === null || indicadorId === undefined) ? 0 : Number(indicadorId);
-      const key = `${municipio}_${normalizedIndicadorId}_${tipo}_${codigo}`;
-      formulaLookup[key] = {};
-      
-      // Store formulas for this row
-      Object.entries(preservedFormulas).forEach(([colName, colInfo]) => {
-        if (colInfo.formulas[index] && colInfo.formulas[index][0]) {
-          formulaLookup[key][colName] = colInfo.formulas[index][0];
-        }
-      });
-    });
+    const formulaLookup = buildFormulaLookup(currentRows, currentHeaders, preservedFormulas);
     
     // Build final rows
     datosCombinados.forEach(newRowData => {
-      const municipio = newRowData.municipio;
-      const indicadorId = newRowData.id_indicador;
-      const tipo = newRowData["tipo de dato"];
-      const codigo = newRowData.codigo;
-      
-      const key = `${municipio}_${indicadorId}_${tipo}_${codigo}`;
+      const key = buildRowKey(newRowData, currentHeaders);
       
       // Build final row respecting target column order
       const finalRow = targetColumnOrder.map(colName => {
         if (coreColumns.includes(colName)) {
           // Use fresh data for core columns
-          return newRowData[colName] || "";
+          const coreIndex = coreColumns.indexOf(colName);
+          return newRowData[coreIndex] || "";
         } else {
           // For calculation columns, preserve any existing data/formulas
           return ""; // Will be filled with formulas later
@@ -489,44 +398,7 @@ function refreshConcatenatedDataset() {
     }
     
     // ENHANCED: Restore formulas to calculation columns
-    console.log('Restoring formulas to calculation columns...');
-    
-    // Re-get the data after writing to get correct row positions
-    const updatedData = destinationSheet.getDataRange().getValues();
-    const updatedRows = updatedData.slice(1);
-    
-    Object.entries(preservedFormulas).forEach(([colName, colInfo]) => {
-      console.log(`Restoring formulas to column: ${colName}`);
-      
-      const colIndex = currentHeaders.indexOf(colName);
-      if (colIndex === -1) return;
-      
-      // Build array of formulas to restore
-      const formulasToRestore = [];
-      
-      updatedRows.forEach((row, rowIndex) => {
-        const municipio = row[currentHeaders.indexOf("municipio")];
-        const indicadorId = row[currentHeaders.indexOf("id_indicador")];
-        const tipo = row[currentHeaders.indexOf("tipo de dato")];
-        const codigo = row[currentHeaders.indexOf("codigo")];
-        
-        // Normalize indicadorId for consistent keys
-        const normalizedIndicadorId = (indicadorId === "" || indicadorId === null || indicadorId === undefined) ? 0 : Number(indicadorId);
-        const key = `${municipio}_${normalizedIndicadorId}_${tipo}_${codigo}`;
-        
-        if (formulaLookup[key] && formulaLookup[key][colName]) {
-          formulasToRestore.push([formulaLookup[key][colName]]);
-        } else {
-          formulasToRestore.push(['']); // Empty if no formula found
-        }
-      });
-      
-      // Write formulas back
-      if (formulasToRestore.length > 0) {
-        const range = destinationSheet.getRange(2, colIndex + 1, formulasToRestore.length, 1);
-        range.setFormulas(formulasToRestore);
-      }
-    });
+    restoreFormulasToColumns(destinationSheet, preservedFormulas, formulaLookup, currentHeaders, finalData);
     
     // Apply formatting
     const headerRange = destinationSheet.getRange(1, 1, 1, targetColumnOrder.length);
@@ -563,6 +435,78 @@ function refreshConcatenatedDataset() {
       ui.ButtonSet.OK
     );
   }
+}
+
+// =============================================
+// HELPER FUNCTIONS FOR FORMULA PRESERVATION
+// =============================================
+
+/**
+ * Build lookup for preserved formulas based on row key
+ */
+function buildFormulaLookup(currentRows, currentHeaders, preservedFormulas) {
+  const formulaLookup = {};
+  
+  currentRows.forEach((row, index) => {
+    const key = buildRowKey(row, currentHeaders);
+    formulaLookup[key] = {};
+    
+    // Store formulas for this row
+    Object.entries(preservedFormulas).forEach(([colName, colInfo]) => {
+      if (colInfo.formulas[index] && colInfo.formulas[index][0]) {
+        formulaLookup[key][colName] = colInfo.formulas[index][0];
+      }
+    });
+  });
+  
+  return formulaLookup;
+}
+
+/**
+ * Build row key for formula lookup
+ */
+function buildRowKey(row, headers) {
+  const municipio = row[headers.indexOf("municipio")] || row[0];
+  const indicadorId = getValueOrZero(row[headers.indexOf("id_indicador")] || row[1]);
+  const tipo = row[headers.indexOf("tipo de dato")] || row[6];
+  const codigo = row[headers.indexOf("codigo")] || row[5];
+  
+  return `${municipio}_${indicadorId}_${tipo}_${codigo}`;
+}
+
+/**
+ * Restore formulas to calculation columns
+ */
+function restoreFormulasToColumns(destinationSheet, preservedFormulas, formulaLookup, currentHeaders, finalData) {
+  console.log('Restoring formulas to calculation columns...');
+  
+  const updatedRows = finalData.slice(1); // Skip headers
+  
+  Object.entries(preservedFormulas).forEach(([colName, colInfo]) => {
+    console.log(`Restoring formulas to column: ${colName}`);
+    
+    const colIndex = currentHeaders.indexOf(colName);
+    if (colIndex === -1) return;
+    
+    // Build array of formulas to restore
+    const formulasToRestore = [];
+    
+    updatedRows.forEach((row, rowIndex) => {
+      const key = buildRowKey(row, currentHeaders);
+      
+      if (formulaLookup[key] && formulaLookup[key][colName]) {
+        formulasToRestore.push([formulaLookup[key][colName]]);
+      } else {
+        formulasToRestore.push(['']); // Empty if no formula found
+      }
+    });
+    
+    // Write formulas back
+    if (formulasToRestore.length > 0) {
+      const range = destinationSheet.getRange(2, colIndex + 1, formulasToRestore.length, 1);
+      range.setFormulas(formulasToRestore);
+    }
+  });
 }
 
 /**
@@ -615,16 +559,6 @@ function previewColumnMapping() {
     return;
   }
 
-  const columnasMapeo = {
-    "municipio": { hoja1: "municipio", hoja2: "municipio" },
-    "id_indicador": { hoja1: "id_indicador", hoja2: "id_indicador" },
-    "eje": { hoja1: "eje", hoja2: "eje" },
-    "tema": { hoja1: "tema", hoja2: "tema" },
-    "nombre": { hoja1: "nombre_componente", hoja2: "nombre_indicador" },
-    "codigo": { hoja1: "codigo_componente", hoja2: "calculo_indicador"},
-    "tipo de dato": { hoja1: "Manual", hoja2: "Manual" }
-  };
-
   const encabezado1 = hoja1.getDataRange().getValues()[0];
   const encabezado2 = hoja2.getDataRange().getValues()[0];
 
@@ -632,8 +566,8 @@ function previewColumnMapping() {
   preview += `Components Sheet: "${componentsSheetName}"\n`;
   preview += `Indicators Sheet: "${indicatorsSheetName}"\n\n`;
   
-  Object.keys(columnasMapeo).forEach(finalCol => {
-    const map = columnasMapeo[finalCol];
+  Object.keys(STANDARD_COLUMN_MAPPING).forEach(finalCol => {
+    const map = STANDARD_COLUMN_MAPPING[finalCol];
     preview += `"${finalCol}":\n`;
     
     if (map.hoja1 && map.hoja1 !== "Manual") {
