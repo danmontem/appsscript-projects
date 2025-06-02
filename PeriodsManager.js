@@ -1213,9 +1213,9 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   const destHeaders = destData[0];
   const destRows = destData.slice(1);
   
-  // Validate columns using CommonHelpers
-  const periodsIndices = getColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
-  const destIndices = getColumnIndices(destHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+  // Validate columns using FLEXIBLE column detection
+  const periodsIndices = getFlexibleColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+  const destIndices = getFlexibleColumnIndices(destHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
   
   // Validate selected period exists
   const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);

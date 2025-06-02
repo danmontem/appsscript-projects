@@ -603,7 +603,43 @@ function debugPeriodsMapping() {
   }
   
   ui.alert('Debug Report', report, ui.ButtonSet.OK);
-  console.log('=== DEBUG COMPLETE ===');
+/**
+ * Enhanced column indices function that handles flexible column names
+ */
+function getFlexibleColumnIndices(headers, requiredColumns) {
+  const indices = {};
+  let valid = true;
+  
+  requiredColumns.forEach(colName => {
+    let index = -1;
+    
+    // Try exact match first
+    index = headers.indexOf(colName);
+    
+    // If not found, try alternative names for specific columns
+    if (index === -1 && colName === 'tipo de dato') {
+      // Try alternative names for "tipo de dato"
+      const alternatives = ['tipo_de_dato', 'tipo', 'tipoDato', 'type'];
+      for (const alt of alternatives) {
+        index = headers.indexOf(alt);
+        if (index !== -1) {
+          console.log(`Found "${colName}" as "${alt}" at index ${index}`);
+          break;
+        }
+      }
+    }
+    
+    if (index === -1) {
+      console.log(`Column "${colName}" not found in headers:`, headers);
+      valid = false;
+    }
+    
+    const key = colName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    indices[key] = index;
+  });
+  
+  indices.valid = valid;
+  return indices;
 }
 
 /**
@@ -673,9 +709,20 @@ function debugFormulaGeneration() {
       return;
     }
     
-    // Find column indices
-    const periodsIndices = getColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+    // Find column indices - ENHANCED DEBUGGING
+    const periodsIndices = getFlexibleColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
     console.log('Column indices:', periodsIndices);
+    console.log('Searching for columns:', ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+    console.log('Available headers:', periodsHeaders);
+    
+    // Manual check for tipo de dato column
+    const tipoColumnIndex = periodsHeaders.indexOf('tipo de dato');
+    const tipoColumnAlt1 = periodsHeaders.indexOf('tipo_de_dato');
+    const tipoColumnAlt2 = periodsHeaders.indexOf('tipo');
+    console.log('Manual column search:');
+    console.log('  "tipo de dato":', tipoColumnIndex);
+    console.log('  "tipo_de_dato":', tipoColumnAlt1);
+    console.log('  "tipo":', tipoColumnAlt2);
     
     if (!periodsIndices.valid) {
       ui.alert('Error', 'Required columns not found in periods dataset.', ui.ButtonSet.OK);
@@ -712,6 +759,24 @@ function debugFormulaGeneration() {
     report += `Selected Period: "${selectedPeriod}"\n`;
     report += `Period Column Index: ${selectedPeriodIndex}\n`;
     report += `Total Rows: ${periodsRows.length}\n\n`;
+    
+    report += `PERIODS DATASET ANALYSIS:\n`;
+    report += `Total Headers: ${periodsHeaders.length}\n`;
+    report += `Headers: ${periodsHeaders.join(', ')}\n\n`;
+    
+    report += `COLUMN MAPPING ANALYSIS:\n`;
+    report += `Looking for: municipio, id_indicador, tipo de dato, codigo\n`;
+    report += `Found indices: ${JSON.stringify(periodsIndices)}\n`;
+    
+    // Check for alternative column names
+    const altTipoIndex1 = periodsHeaders.indexOf('tipo_de_dato');
+    const altTipoIndex2 = periodsHeaders.indexOf('tipo');
+    if (altTipoIndex1 !== -1 || altTipoIndex2 !== -1) {
+      report += `Alternative "tipo" columns found:\n`;
+      if (altTipoIndex1 !== -1) report += `  "tipo_de_dato" at index ${altTipoIndex1}\n`;
+      if (altTipoIndex2 !== -1) report += `  "tipo" at index ${altTipoIndex2}\n`;
+    }
+    report += `\n`;
     
     report += `FIRST 10 ROWS ANALYSIS:\n`;
     analysisData.forEach(data => {
