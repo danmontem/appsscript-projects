@@ -950,4 +950,4 @@ function debugPeriodsDatasetCreation() {
     console.error('Periods dataset creation debug error:', error);
     ui.alert('Debug Error', `Error during debug: ${error.message}`, ui.ButtonSet.OK);
   }
-}
+}}
