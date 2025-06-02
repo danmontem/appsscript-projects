@@ -1214,11 +1214,18 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   const destRows = destData.slice(1);
   
   // Validate columns using CommonHelpers
-  const periodsIndices = getColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo', selectedPeriod]);
+  const periodsIndices = getColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
   const destIndices = getColumnIndices(destHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
   
-  if (!periodsIndices.valid || !destIndices.valid) {
-    ui.alert('Error', 'Required columns not found.', ui.ButtonSet.OK);
+  // Validate selected period exists
+  const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);
+  
+  if (!periodsIndices.valid || !destIndices.valid || selectedPeriodIndex === -1) {
+    let errorMsg = 'Required columns not found.';
+    if (selectedPeriodIndex === -1) {
+      errorMsg += `\n\nPeriod "${selectedPeriod}" not found in periods dataset.\nAvailable periods: ${periodsHeaders.filter(h => EVALUATION_PERIOD_COLUMNS.includes(h)).join(', ')}`;
+    }
+    ui.alert('Error', errorMsg, ui.ButtonSet.OK);
     return;
   }
   
@@ -1226,7 +1233,11 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   const periodsLookup = new Map();
   periodsRows.forEach(row => {
     const key = `${row[periodsIndices.municipio]}_${row[periodsIndices.id_indicador]}_${row[periodsIndices.tipo_de_dato]}_${row[periodsIndices.codigo]}`;
-    periodsLookup.set(key, row[periodsIndices[selectedPeriod.replace(' ', '_')]]);
+    // FIXED: Use the actual column index for the selected period
+    const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);
+    if (selectedPeriodIndex !== -1) {
+      periodsLookup.set(key, row[selectedPeriodIndex]);
+    }
   });
   
   // Add calculation column

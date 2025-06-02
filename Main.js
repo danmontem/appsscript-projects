@@ -50,6 +50,8 @@ function onOpen() {
       .addItem('Test External Document Access', 'testExternalDocumentAccess')
       .addItem('Test Component Value', 'testComponentValue')
       .addItem('Test Component Sum', 'testComponentSum')
+      .addItem('🔬 Debug Formula Generation', 'debugFormulaGeneration')
+      .addSeparator()
       .addItem('Fast Periods Dataset Diagnostic', 'fastPeriodsDatasetDiagnostic')
       .addItem('Detailed Periods Dataset Analysis', 'detailedPeriodsDatasetDiagnostic')
       .addItem('Debug Periods Mapping', 'debugPeriodsMapping')
@@ -602,4 +604,148 @@ function debugPeriodsMapping() {
   
   ui.alert('Debug Report', report, ui.ButtonSet.OK);
   console.log('=== DEBUG COMPLETE ===');
+}
+
+/**
+ * Debug function for formula generation issues
+ */
+function debugFormulaGeneration() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Ask for the evaluation periods dataset
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  const periodsDatasetResult = ui.prompt(
+    'Debug Formula Generation - Select Periods Dataset',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your evaluation periods dataset:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (periodsDatasetResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const periodsDatasetName = periodsDatasetResult.getResponseText().trim();
+  const periodsDataset = ss.getSheetByName(periodsDatasetName);
+  
+  if (!periodsDataset) {
+    ui.alert('Error', `Sheet "${periodsDatasetName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Ask for the period to debug
+  const periodResult = ui.prompt(
+    'Debug Formula Generation - Select Period',
+    `Available periods:\n${EVALUATION_PERIOD_COLUMNS.join('\n')}\n\nEnter the period name:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (periodResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const selectedPeriod = periodResult.getResponseText().trim();
+  
+  try {
+    // Get data
+    const periodsData = periodsDataset.getDataRange().getValues();
+    const periodsHeaders = periodsData[0];
+    const periodsRows = periodsData.slice(1);
+    
+    console.log('=== FORMULA GENERATION DEBUG ===');
+    console.log('Periods dataset:', periodsDatasetName);
+    console.log('Selected period:', selectedPeriod);
+    console.log('Headers:', periodsHeaders);
+    
+    // Check if period exists
+    const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);
+    console.log('Selected period index:', selectedPeriodIndex);
+    
+    if (selectedPeriodIndex === -1) {
+      ui.alert(
+        'Period Not Found',
+        `Period "${selectedPeriod}" not found in periods dataset.\n\n` +
+        `Available periods: ${periodsHeaders.filter(h => EVALUATION_PERIOD_COLUMNS.includes(h)).join(', ')}`,
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+    
+    // Find column indices
+    const periodsIndices = getColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+    console.log('Column indices:', periodsIndices);
+    
+    if (!periodsIndices.valid) {
+      ui.alert('Error', 'Required columns not found in periods dataset.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Create periods lookup and analyze first 10 rows
+    const periodsLookup = new Map();
+    const analysisData = [];
+    
+    for (let i = 0; i < Math.min(10, periodsRows.length); i++) {
+      const row = periodsRows[i];
+      const key = `${row[periodsIndices.municipio]}_${row[periodsIndices.id_indicador]}_${row[periodsIndices.tipo_de_dato]}_${row[periodsIndices.codigo]}`;
+      const periodValue = row[selectedPeriodIndex];
+      
+      periodsLookup.set(key, periodValue);
+      
+      analysisData.push({
+        rowNum: i + 2,
+        municipio: row[periodsIndices.municipio],
+        id_indicador: row[periodsIndices.id_indicador],
+        tipo: row[periodsIndices.tipo_de_dato],
+        codigo: row[periodsIndices.codigo],
+        period: periodValue,
+        key: key
+      });
+      
+      console.log(`Row ${i + 2}: ${key} -> "${periodValue}"`);
+    }
+    
+    // Build detailed report
+    let report = `FORMULA GENERATION DEBUG REPORT:\n\n`;
+    report += `Periods Dataset: "${periodsDatasetName}"\n`;
+    report += `Selected Period: "${selectedPeriod}"\n`;
+    report += `Period Column Index: ${selectedPeriodIndex}\n`;
+    report += `Total Rows: ${periodsRows.length}\n\n`;
+    
+    report += `FIRST 10 ROWS ANALYSIS:\n`;
+    analysisData.forEach(data => {
+      report += `Row ${data.rowNum}: ${data.municipio} | ${data.tipo} | ${data.codigo}\n`;
+      report += `  Period Value: "${data.period}"\n`;
+      report += `  Lookup Key: ${data.key}\n\n`;
+    });
+    
+    report += `COMPONENTS DATA SHEET CONFIGURATION:\n`;
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const componentsDataSheet = scriptProperties.getProperty('COMPONENTS_DATA_SHEET_NAME');
+    if (componentsDataSheet) {
+      report += `✅ Configured: "${componentsDataSheet}"\n`;
+      
+      // Test if sheet exists
+      const testSheet = ss.getSheetByName(componentsDataSheet);
+      if (testSheet) {
+        report += `✅ Sheet exists and accessible\n`;
+      } else {
+        report += `❌ Sheet not found - reconfigure needed\n`;
+      }
+    } else {
+      report += `❌ Not configured - run "Configure Components Data Sheet"\n`;
+    }
+    
+    report += `\nNEXT STEPS:\n`;
+    report += `1. Verify period values are not empty\n`;
+    report += `2. Check components data sheet configuration\n`;
+    report += `3. Try running formula generation again\n`;
+    
+    ui.alert('Debug Results', report, ui.ButtonSet.OK);
+    
+  } catch (error) {
+    console.error('Debug error:', error);
+    ui.alert('Debug Error', `Error during debug: ${error.message}`, ui.ButtonSet.OK);
+  }
 }
