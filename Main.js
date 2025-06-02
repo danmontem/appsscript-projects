@@ -39,6 +39,8 @@ function onOpen() {
     )
     .addSeparator()
     .addSubMenu(ui.createMenu('🧮 Calculations & Formulas')
+      .addItem('🔧 Configure Components Data Sheet', 'configureComponentsDataSheet')
+      .addSeparator()
       .addItem('Create Formula Builder', 'createFormulaBuilder')
       .addItem('Setup Auto-Refresh (Every 5 Minutes)', 'createDataRefreshTrigger')
       .addItem('Refresh Calculations Now', 'manualRefreshCalculations')
