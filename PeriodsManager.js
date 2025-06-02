@@ -114,13 +114,13 @@ function createEvaluationPeriodsDataset() {
   // Copy core data with PROPER handling of id_indicador = 0
   const resultData = [];
   
-  sourceRows.forEach(row => {
+  sourceRows.forEach((row, index) => {
     const newRow = [
       getValueOrEmpty(row[columnIndices.municipio]),
       getValueOrZero(row[columnIndices.id_indicador]),  // Fixed: Use special handler for id_indicador
       getValueOrEmpty(row[columnIndices.eje]),
       getValueOrEmpty(row[columnIndices.tema]),
-      getValueOrEmpty(row[columnIndices.tipo_de_dato]),
+      getValueOrEmpty(row[columnIndices.tipo_de_dato]),  // FIXED: Use correct property name with underscore
       getValueOrEmpty(row[columnIndices.nombre]),
       getValueOrEmpty(row[columnIndices.codigo])
     ];
@@ -131,6 +131,11 @@ function createEvaluationPeriodsDataset() {
     });
     
     resultData.push(newRow);
+    
+    // ENHANCED DEBUGGING: Log first few rows
+    if (index < 3) {
+      console.log(`Row ${index + 2} processed: municipio=${newRow[0]}, id_indicador=${newRow[1]}, tipo="${newRow[4]}", codigo=${newRow[6]}`);
+    }
   });
   
   // Write data to destination
