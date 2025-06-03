@@ -242,6 +242,8 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
   const tipoIndex = calcHeaders.indexOf('tipo de dato');
   const codigoIndex = calcHeaders.indexOf('codigo');
   
+  console.log(`Starting analysis with formula column at index: ${formulaColumnIndex}`);
+  
   calcRows.forEach((row, rowIndex) => {
     const actualRowNum = rowIndex + 2;
     const municipio = row[municipioIndex];
@@ -249,6 +251,11 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
     const tipo = row[tipoIndex];
     const codigo = row[codigoIndex];
     const currentFormula = row[formulaColumnIndex];
+    
+    // DEBUG: Log first few rows to understand data types
+    if (rowIndex < 3) {
+      console.log(`Row ${actualRowNum}: formula type = ${typeof currentFormula}, value = "${currentFormula}"`);
+    }
     
     // Only check components
     if (!codigo || tipo !== 'Componente') return;
@@ -259,13 +266,20 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
     const lookupKey = `${municipio}_${id}_${tipo}_${codigo}`;
     const currentPeriod = periodsLookup.get(lookupKey);
     
-    if (!currentPeriod) return;
+    if (!currentPeriod) {
+      console.log(`No period found for: ${lookupKey}`);
+      return;
+    }
     
     // Check if formula needs update
     const updateInfo = checkIfFormulaNeedsUpdate(currentFormula, currentPeriod, codigo);
     
     if (updateInfo.isManual) {
       analysis.manual++;
+      // DEBUG: Log manual entries for first few
+      if (analysis.manual <= 3) {
+        console.log(`Manual entry detected at row ${actualRowNum}: ${codigo}, formula type: ${typeof currentFormula}`);
+      }
     } else if (updateInfo.needsUpdate) {
       analysis.needsUpdate.push({
         rowIndex: rowIndex,
@@ -292,10 +306,19 @@ function checkIfFormulaNeedsUpdate(currentFormula, currentPeriod, codigo) {
     changeType: null
   };
   
+  // FIXED: Ensure currentFormula is a string and handle all falsy values
+  if (!currentFormula || typeof currentFormula !== 'string') {
+    result.isManual = true;
+    return result;
+  }
+  
+  // Convert to string and trim in case it's not already
+  const formulaString = String(currentFormula).trim();
+  
   // Check if it's a manual entry
-  if (!currentFormula || 
-      !currentFormula.startsWith('=CALCULATE_INDICATOR') || 
-      !currentFormula.includes(codigo)) {
+  if (!formulaString || 
+      !formulaString.startsWith('=CALCULATE_INDICATOR') || 
+      !formulaString.includes(codigo)) {
     result.isManual = true;
     return result;
   }
@@ -306,8 +329,8 @@ function checkIfFormulaNeedsUpdate(currentFormula, currentPeriod, codigo) {
     const expectedType = expectedDateRange.includes('-') ? 'SUM' : 'SINGLE';
     
     // Extract current formula info
-    const currentType = currentFormula.includes('"SINGLE(') ? 'SINGLE' : 'SUM';
-    const dateMatch = currentFormula.match(new RegExp(`${codigo}:([^"]+)`));
+    const currentType = formulaString.includes('"SINGLE(') ? 'SINGLE' : 'SUM';
+    const dateMatch = formulaString.match(new RegExp(`${codigo}:([^"]+)`));
     const currentDateRange = dateMatch ? dateMatch[1] : null;
     
     // Check for changes
