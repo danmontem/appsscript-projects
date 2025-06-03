@@ -322,7 +322,27 @@ function getColumnIndices(headers, requiredColumns) {
     if (index === -1) {
       valid = false;
     }
-    indices[colName.replace(' ', '_')] = index;
+    indices[colName.replace(/ /g, '_')] = index;  // FIXED: Replace ALL spaces with underscores
+  });
+  
+  indices.valid = valid;
+  return indices;
+}
+
+/**
+ * Flexible version of getColumnIndices that handles various column name formats
+ * Used for formula generation and other advanced processing
+ */
+function getFlexibleColumnIndices(headers, requiredColumns) {
+  const indices = {};
+  let valid = true;
+  
+  requiredColumns.forEach(colName => {
+    const index = headers.indexOf(colName);
+    if (index === -1) {
+      valid = false;
+    }
+    indices[colName.replace(/ /g, '_')] = index;  // Replace ALL spaces with underscores
   });
   
   indices.valid = valid;
