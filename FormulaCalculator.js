@@ -1,8 +1,106 @@
 /**
  * FormulaCalculator.js
- * Cleaned and optimized formula calculation functions
+ * Cleaned and optimized formula calculation functions - PORTABLE VERSION
  * Dependencies: CommonHelpers.js
+ * 
+ * UPDATED: Removed hardcoded sheet names for portability
  */
+
+// =============================================
+// CONFIGURATION FUNCTIONS FOR PORTABILITY
+// =============================================
+
+/**
+ * Get the user-configured components data sheet name
+ * Falls back to asking user if not configured
+ */
+function getComponentsDataSheetName() {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  let sheetName = scriptProperties.getProperty('COMPONENTS_DATA_SHEET_NAME');
+  
+  if (!sheetName) {
+    // Ask user to configure it
+    const ui = SpreadsheetApp.getUi();
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+    const sheetsText = availableSheets.join(', ');
+    
+    const result = ui.prompt(
+      'Configure Components Data Sheet',
+      `Please select the sheet containing your components data:\n\n` +
+      `Available sheets: ${sheetsText}\n\n` +
+      `Enter the sheet name:`,
+      ui.ButtonSet.OK_CANCEL
+    );
+    
+    if (result.getSelectedButton() === ui.Button.OK) {
+      sheetName = result.getResponseText().trim();
+      scriptProperties.setProperty('COMPONENTS_DATA_SHEET_NAME', sheetName);
+    } else {
+      throw new Error('Components data sheet name is required for calculations');
+    }
+  }
+  
+  return sheetName;
+}
+
+/**
+ * Allow user to reconfigure the components data sheet
+ */
+function configureComponentsDataSheet() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  const result = ui.prompt(
+    'Configure Components Data Sheet',
+    `Select the sheet containing your components data for calculations:\n\n` +
+    `Available sheets: ${sheetsText}\n\n` +
+    `Enter the sheet name:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (result.getSelectedButton() === ui.Button.OK) {
+    const sheetName = result.getResponseText().trim();
+    const sheet = ss.getSheetByName(sheetName);
+    
+    if (!sheet) {
+      ui.alert('Error', `Sheet "${sheetName}" not found.`, ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Validate the sheet has required columns
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    
+    const requiredColumns = ['municipio', 'codigo_componente'];
+    const missingColumns = requiredColumns.filter(col => !headers.includes(col));
+    
+    if (missingColumns.length > 0) {
+      ui.alert(
+        'Invalid Sheet Structure', 
+        `The selected sheet is missing required columns:\n${missingColumns.join(', ')}\n\n` +
+        `Required columns: ${requiredColumns.join(', ')}\n` +
+        `Available columns: ${headers.join(', ')}`,
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+    
+    // Save configuration
+    const scriptProperties = PropertiesService.getScriptProperties();
+    scriptProperties.setProperty('COMPONENTS_DATA_SHEET_NAME', sheetName);
+    
+    ui.alert(
+      'Configuration Saved',
+      `Components data sheet set to: "${sheetName}"\n\n` +
+      `This will be used for all COMPONENT_VALUE and COMPONENT_SUM calculations.\n\n` +
+      `You can change this anytime using "Configure Components Data Sheet" in the menu.`,
+      ui.ButtonSet.OK
+    );
+  }
+}
 
 // =============================================
 // MAIN CALCULATION FUNCTIONS
@@ -10,6 +108,7 @@
 
 /**
  * Enhanced COMPONENT_VALUE function that handles string values like "SD"
+ * NOW PORTABLE: Uses user-configured sheet name instead of hardcoded "BD_componentes"
  * 
  * @param {string} componentCode - The code of the component
  * @param {string} month - The month in format "month year" (e.g., "marzo 2025")
@@ -18,12 +117,13 @@
  * @customfunction
  */
 function COMPONENT_VALUE(componentCode, month, municipio) {
-  // Use the correct sheet name where your components are stored
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("BD_componentes");
+  // Get the user-configured sheet name
+  const sheetName = getComponentsDataSheetName();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   
   // Check if sheet exists
   if (!sheet) {
-    throw new Error("Sheet 'BD_componentes' not found. Please specify the correct sheet name.");
+    throw new Error(`Sheet '${sheetName}' not found. Please reconfigure using "Configure Components Data Sheet".`);
   }
   
   const data = sheet.getDataRange().getValues();
@@ -32,10 +132,19 @@ function COMPONENT_VALUE(componentCode, month, municipio) {
   // Convert month code to actual month name (using CommonHelpers)
   const fullMonth = convertMonthCode(month);
   
-  // Find column indices
-  const municipioCol = 0; // Column A (municipio)
-  const componentCodeCol = 3; // Column D (codigo_componente)
+  // Find column indices dynamically
+  const municipioCol = headers.indexOf('municipio');
+  const componentCodeCol = headers.indexOf('codigo_componente');
   const monthCol = headers.indexOf(fullMonth.toLowerCase());
+  
+  // Validate required columns exist
+  if (municipioCol === -1) {
+    throw new Error(`Column 'municipio' not found in sheet '${sheetName}'. Available headers: ${headers.join(", ")}`);
+  }
+  
+  if (componentCodeCol === -1) {
+    throw new Error(`Column 'codigo_componente' not found in sheet '${sheetName}'. Available headers: ${headers.join(", ")}`);
+  }
   
   if (monthCol === -1) {
     throw new Error(`Month "${fullMonth}" not found in headers. Available headers: ${headers.join(", ")}`);
@@ -52,11 +161,12 @@ function COMPONENT_VALUE(componentCode, month, municipio) {
     }
   }
   
-  throw new Error(`Component "${componentCode}" not found for municipality "${municipio}"`);
+  throw new Error(`Component "${componentCode}" not found for municipality "${municipio}" in sheet "${sheetName}"`);
 }
 
 /**
  * Enhanced COMPONENT_SUM function that handles string values
+ * NOW PORTABLE: Uses user-configured sheet name instead of hardcoded "BD_componentes"
  * 
  * @param {string} componentCode - The code of the component
  * @param {string} startMonth - The start month in format "month year"
@@ -66,18 +176,29 @@ function COMPONENT_VALUE(componentCode, month, municipio) {
  * @customfunction
  */
 function COMPONENT_SUM(componentCode, startMonth, endMonth, municipio) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("BD_componentes");
+  // Get the user-configured sheet name
+  const sheetName = getComponentsDataSheetName();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   
   if (!sheet) {
-    throw new Error("Sheet 'BD_componentes' not found.");
+    throw new Error(`Sheet '${sheetName}' not found. Please reconfigure using "Configure Components Data Sheet".`);
   }
   
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   
-  // Find column indices
-  const municipioCol = 0;
-  const componentCodeCol = 3;
+  // Find column indices dynamically
+  const municipioCol = headers.indexOf('municipio');
+  const componentCodeCol = headers.indexOf('codigo_componente');
+  
+  // Validate required columns exist
+  if (municipioCol === -1) {
+    throw new Error(`Column 'municipio' not found in sheet '${sheetName}'. Available headers: ${headers.join(", ")}`);
+  }
+  
+  if (componentCodeCol === -1) {
+    throw new Error(`Column 'codigo_componente' not found in sheet '${sheetName}'. Available headers: ${headers.join(", ")}`);
+  }
   
   // Parse start and end months (using CommonHelpers MONTH_ORDER)
   const [startMonthName, startYear] = startMonth.toLowerCase().split(" ");
@@ -102,7 +223,7 @@ function COMPONENT_SUM(componentCode, startMonth, endMonth, municipio) {
   }
   
   if (monthColumns.length === 0) {
-    throw new Error(`No months found between "${startMonth}" and "${endMonth}"`);
+    throw new Error(`No months found between "${startMonth}" and "${endMonth}" in sheet "${sheetName}"`);
   }
   
   // Search for the row with matching component code and municipality
@@ -151,7 +272,7 @@ function COMPONENT_SUM(componentCode, startMonth, endMonth, municipio) {
     }
   }
   
-  throw new Error(`Component "${componentCode}" not found for municipality "${municipio}"`);
+  throw new Error(`Component "${componentCode}" not found for municipality "${municipio}" in sheet "${sheetName}"`);
 }
 
 /**
@@ -381,27 +502,33 @@ function evaluateComponentPart(componentPart, municipio) {
 
 /**
  * Helper function to get component data for change detection
+ * NOW PORTABLE: Uses user-configured sheet name
  */
 function getComponentData(componentCode, municipio) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("BD_componentes");
+  const sheetName = getComponentsDataSheetName();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
   
   if (!sheet) {
-    throw new Error("Sheet 'BD_componentes' not found.");
+    throw new Error(`Sheet '${sheetName}' not found. Please reconfigure using "Configure Components Data Sheet".`);
   }
   
   const data = sheet.getDataRange().getValues();
   const headers = data[0];
   
-  // Find column indices
-  const municipioCol = 0; // Column A (municipio)
-  const componentCodeCol = 3; // Column D (codigo_componente)
+  // Find column indices dynamically
+  const municipioCol = headers.indexOf('municipio');
+  const componentCodeCol = headers.indexOf('codigo_componente');
+  
+  if (municipioCol === -1 || componentCodeCol === -1) {
+    throw new Error(`Required columns not found in sheet '${sheetName}'. Need 'municipio' and 'codigo_componente'.`);
+  }
   
   // Search for the row with matching component code and municipality
   for (let i = 1; i < data.length; i++) {
     if (data[i][municipioCol] === municipio && data[i][componentCodeCol] === componentCode) {
       // Get all monthly data from this row
       const monthValues = {};
-      for (let j = 9; j < headers.length; j++) {
+      for (let j = 0; j < headers.length; j++) {
         // Only include columns that look like month names
         if (headers[j].includes(" 20")) {
           monthValues[headers[j]] = data[i][j];
@@ -416,7 +543,7 @@ function getComponentData(componentCode, municipio) {
     }
   }
   
-  throw new Error(`Component "${componentCode}" not found for municipality "${municipio}"`);
+  throw new Error(`Component "${componentCode}" not found for municipality "${municipio}" in sheet "${sheetName}"`);
 }
 
 // =============================================
@@ -427,14 +554,26 @@ function getComponentData(componentCode, municipio) {
  * Test function for debugging component values
  */
 function testComponentValue() {
-  const result = COMPONENT_VALUE("MRez", "ENE24", "Apodaca");
-  console.log("Result: " + result);
+  try {
+    const result = COMPONENT_VALUE("MRez", "ENE24", "Apodaca");
+    console.log("Result: " + result);
+    SpreadsheetApp.getUi().alert('Test Result', `COMPONENT_VALUE test result: ${result}`, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (error) {
+    console.error("Error in testComponentValue:", error);
+    SpreadsheetApp.getUi().alert('Test Error', `Error: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
 }
 
 /**
  * Test sum function
  */
 function testComponentSum() {
-  const result = COMPONENT_SUM("MRez", "enero 2024", "diciembre 2024", "Apodaca");
-  console.log("Sum result: " + result);
+  try {
+    const result = COMPONENT_SUM("MRez", "enero 2024", "diciembre 2024", "Apodaca");
+    console.log("Sum result: " + result);
+    SpreadsheetApp.getUi().alert('Test Result', `COMPONENT_SUM test result: ${result}`, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (error) {
+    console.error("Error in testComponentSum:", error);
+    SpreadsheetApp.getUi().alert('Test Error', `Error: ${error.message}`, SpreadsheetApp.getUi().ButtonSet.OK);
+  }
 }

@@ -114,13 +114,13 @@ function createEvaluationPeriodsDataset() {
   // Copy core data with PROPER handling of id_indicador = 0
   const resultData = [];
   
-  sourceRows.forEach(row => {
+  sourceRows.forEach((row, index) => {
     const newRow = [
       getValueOrEmpty(row[columnIndices.municipio]),
       getValueOrZero(row[columnIndices.id_indicador]),  // Fixed: Use special handler for id_indicador
       getValueOrEmpty(row[columnIndices.eje]),
       getValueOrEmpty(row[columnIndices.tema]),
-      getValueOrEmpty(row[columnIndices.tipo_de_dato]),
+      getValueOrEmpty(row[columnIndices.tipo_de_dato]),  // FIXED: Use correct property name with underscore
       getValueOrEmpty(row[columnIndices.nombre]),
       getValueOrEmpty(row[columnIndices.codigo])
     ];
@@ -131,6 +131,11 @@ function createEvaluationPeriodsDataset() {
     });
     
     resultData.push(newRow);
+    
+    // ENHANCED DEBUGGING: Log first few rows
+    if (index < 3) {
+      console.log(`Row ${index + 2} processed: municipio=${newRow[0]}, id_indicador=${newRow[1]}, tipo="${newRow[4]}", codigo=${newRow[6]}`);
+    }
   });
   
   // Write data to destination
@@ -1213,12 +1218,19 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   const destHeaders = destData[0];
   const destRows = destData.slice(1);
   
-  // Validate columns using CommonHelpers
-  const periodsIndices = getColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo', selectedPeriod]);
-  const destIndices = getColumnIndices(destHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+  // Validate columns using FLEXIBLE column detection
+  const periodsIndices = getFlexibleColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+  const destIndices = getFlexibleColumnIndices(destHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
   
-  if (!periodsIndices.valid || !destIndices.valid) {
-    ui.alert('Error', 'Required columns not found.', ui.ButtonSet.OK);
+  // Validate selected period exists
+  const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);
+  
+  if (!periodsIndices.valid || !destIndices.valid || selectedPeriodIndex === -1) {
+    let errorMsg = 'Required columns not found.';
+    if (selectedPeriodIndex === -1) {
+      errorMsg += `\n\nPeriod "${selectedPeriod}" not found in periods dataset.\nAvailable periods: ${periodsHeaders.filter(h => EVALUATION_PERIOD_COLUMNS.includes(h)).join(', ')}`;
+    }
+    ui.alert('Error', errorMsg, ui.ButtonSet.OK);
     return;
   }
   
@@ -1226,11 +1238,12 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   const periodsLookup = new Map();
   periodsRows.forEach(row => {
     const key = `${row[periodsIndices.municipio]}_${row[periodsIndices.id_indicador]}_${row[periodsIndices.tipo_de_dato]}_${row[periodsIndices.codigo]}`;
-    periodsLookup.set(key, row[periodsIndices[selectedPeriod.replace(' ', '_')]]);
+    // FIXED: Use the actual column index for the selected period
+    const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);
+    if (selectedPeriodIndex !== -1) {
+      periodsLookup.set(key, row[selectedPeriodIndex]);
+    }
   });
-  
-  // Get BD_componentes mapping for formula generation
-  const lookupMap = getBDComponentesMapping(ss);
   
   // Add calculation column
   const calculationColumnIndex = destHeaders.length + 1;
@@ -1239,8 +1252,8 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   destinationSheet.getRange(1, calculationColumnIndex).setValue(calculationColumnName);
   destinationSheet.getRange(1, calculationColumnIndex).setFontWeight('bold').setBackground('#e8f4fd');
   
-  // Generate formulas in batch
-  const formulas = generateFormulasBatch(destRows, destIndices, periodsLookup, lookupMap, calculationColumnIndex);
+  // Generate formulas in batch - PORTABLE VERSION (no more hardcoded sheet references)
+  const formulas = generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex);
   
   // Write all formulas at once
   if (formulas.length > 0) {
@@ -1257,9 +1270,10 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
 }
 
 /**
- * Generate formulas in batch for optimization
+ * Generate formulas in batch for optimization - PORTABLE VERSION
+ * Fixed manual period handling and hardcoded sheet references
  */
-function generateFormulasBatch(destRows, destIndices, periodsLookup, lookupMap, calculationColumnIndex) {
+function generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex) {
   const formulas = [];
   
   destRows.forEach((row, rowIndex) => {
@@ -1280,19 +1294,34 @@ function generateFormulasBatch(destRows, destIndices, periodsLookup, lookupMap, 
     let formula = '';
     
     if (tipo === 'Componente') {
-      if (!period || period === '' || period.includes('ERROR:') || period.includes('Manual entry needed') || period === 'NA') {
+      // FIXED: Better handling of manual periods and validation
+      if (!period || period === '' || period === 'NA') {
+        // Period is truly missing
         formula = `=IFERROR("PERIOD_MISSING_FOR_${codigo}", "")`;
+      } else if (period.includes('ERROR:')) {
+        // Period has normalization error
+        formula = `=IFERROR("PERIOD_ERROR_FOR_${codigo}", "")`;
+      } else if (period.includes('Manual entry needed')) {
+        // Period needs manual entry (should not reach formula generation)
+        formula = `=IFERROR("MANUAL_ENTRY_NEEDED_${codigo}", "")`;
       } else {
-        const formulaDateRange = convertNormalizedPeriodToFormula(period);
-        const municipioCell = `${getColumnLetter(destIndices.municipio + 1)}${actualRowNum}`;
-        
-        const bdRow = lookupMap.get(`${municipio}_${codigo}`);
-        const bdReference = bdRow ? `BD_componentes!${bdRow}:${bdRow}` : 'BD_componentes!1:1';
-        
-        if (formulaDateRange.includes('-')) {
-          formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${bdReference})`;
-        } else {
-          formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${bdReference})`;
+        // FIXED: Valid period found (including manually entered ones)
+        try {
+          const formulaDateRange = convertNormalizedPeriodToFormula(period);
+          const municipioCell = `${getColumnLetter(destIndices.municipio + 1)}${actualRowNum}`;
+          
+          // FIXED: Remove hardcoded BD_componentes reference
+          // Now uses timestamp for auto-refresh instead of hardcoded sheet reference
+          const timestamp = new Date().getTime();
+          
+          if (formulaDateRange.includes('-')) {
+            formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${timestamp})`;
+          } else {
+            formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${timestamp})`;
+          }
+        } catch (error) {
+          console.log(`Error processing period "${period}" for ${codigo}: ${error.message}`);
+          formula = `=IFERROR("PERIOD_FORMAT_ERROR_${codigo}", "")`;
         }
       }
     } else if (tipo === 'Indicador') {
@@ -1305,32 +1334,7 @@ function generateFormulasBatch(destRows, destIndices, periodsLookup, lookupMap, 
   return formulas;
 }
 
-/**
- * Get BD_componentes mapping for formula references
- */
-function getBDComponentesMapping(ss) {
-  const lookupMap = new Map();
-  const bdSheet = ss.getSheetByName('BD_componentes');
-  
-  if (bdSheet) {
-    const bdData = bdSheet.getDataRange().getValues();
-    const bdHeaders = bdData[0];
-    const bdMunicipioIndex = bdHeaders.indexOf('municipio');
-    const bdCodigoIndex = bdHeaders.indexOf('codigo_componente');
-    
-    if (bdMunicipioIndex >= 0 && bdCodigoIndex >= 0) {
-      for (let i = 1; i < bdData.length; i++) {
-        const municipio = bdData[i][bdMunicipioIndex];
-        const codigo = bdData[i][bdCodigoIndex];
-        if (municipio && codigo) {
-          lookupMap.set(`${municipio}_${codigo}`, i + 1);
-        }
-      }
-    }
-  }
-  
-  return lookupMap;
-}
+
 
 /**
  * Generate indicator formula for destination sheet (optimized)

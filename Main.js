@@ -39,6 +39,8 @@ function onOpen() {
     )
     .addSeparator()
     .addSubMenu(ui.createMenu('🧮 Calculations & Formulas')
+      .addItem('🔧 Configure Components Data Sheet', 'configureComponentsDataSheet')
+      .addSeparator()
       .addItem('Create Formula Builder', 'createFormulaBuilder')
       .addItem('Setup Auto-Refresh (Every 5 Minutes)', 'createDataRefreshTrigger')
       .addItem('Refresh Calculations Now', 'manualRefreshCalculations')
@@ -48,6 +50,9 @@ function onOpen() {
       .addItem('Test External Document Access', 'testExternalDocumentAccess')
       .addItem('Test Component Value', 'testComponentValue')
       .addItem('Test Component Sum', 'testComponentSum')
+      .addItem('🔬 Debug Formula Generation', 'debugFormulaGeneration')
+      .addItem('🔍 Debug Periods Dataset Creation', 'debugPeriodsDatasetCreation')
+      .addSeparator()
       .addItem('Fast Periods Dataset Diagnostic', 'fastPeriodsDatasetDiagnostic')
       .addItem('Detailed Periods Dataset Analysis', 'detailedPeriodsDatasetDiagnostic')
       .addItem('Debug Periods Mapping', 'debugPeriodsMapping')
@@ -599,5 +604,350 @@ function debugPeriodsMapping() {
   }
   
   ui.alert('Debug Report', report, ui.ButtonSet.OK);
-  console.log('=== DEBUG COMPLETE ===');
+/**
+ * Enhanced column indices function that handles flexible column names
+ */
+function getFlexibleColumnIndices(headers, requiredColumns) {
+  const indices = {};
+  let valid = true;
+  
+  requiredColumns.forEach(colName => {
+    let index = -1;
+    
+    // Try exact match first
+    index = headers.indexOf(colName);
+    
+    // If not found, try alternative names for specific columns
+    if (index === -1 && colName === 'tipo de dato') {
+      // Try alternative names for "tipo de dato"
+      const alternatives = ['tipo_de_dato', 'tipo', 'tipoDato', 'type'];
+      for (const alt of alternatives) {
+        index = headers.indexOf(alt);
+        if (index !== -1) {
+          console.log(`Found "${colName}" as "${alt}" at index ${index}`);
+          break;
+        }
+      }
+    }
+    
+    if (index === -1) {
+      console.log(`Column "${colName}" not found in headers:`, headers);
+      valid = false;
+    }
+    
+    const key = colName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    indices[key] = index;
+  });
+  
+  indices.valid = valid;
+  return indices;
 }
+
+/**
+ * Debug function for formula generation issues
+ */
+function debugFormulaGeneration() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Ask for the evaluation periods dataset
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  const periodsDatasetResult = ui.prompt(
+    'Debug Formula Generation - Select Periods Dataset',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your evaluation periods dataset:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (periodsDatasetResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const periodsDatasetName = periodsDatasetResult.getResponseText().trim();
+  const periodsDataset = ss.getSheetByName(periodsDatasetName);
+  
+  if (!periodsDataset) {
+    ui.alert('Error', `Sheet "${periodsDatasetName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Ask for the period to debug
+  const periodResult = ui.prompt(
+    'Debug Formula Generation - Select Period',
+    `Available periods:\n${EVALUATION_PERIOD_COLUMNS.join('\n')}\n\nEnter the period name:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (periodResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const selectedPeriod = periodResult.getResponseText().trim();
+  
+  try {
+    // Get data
+    const periodsData = periodsDataset.getDataRange().getValues();
+    const periodsHeaders = periodsData[0];
+    const periodsRows = periodsData.slice(1);
+    
+    console.log('=== FORMULA GENERATION DEBUG ===');
+    console.log('Periods dataset:', periodsDatasetName);
+    console.log('Selected period:', selectedPeriod);
+    console.log('Headers:', periodsHeaders);
+    
+    // Check if period exists
+    const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);
+    console.log('Selected period index:', selectedPeriodIndex);
+    
+    if (selectedPeriodIndex === -1) {
+      ui.alert(
+        'Period Not Found',
+        `Period "${selectedPeriod}" not found in periods dataset.\n\n` +
+        `Available periods: ${periodsHeaders.filter(h => EVALUATION_PERIOD_COLUMNS.includes(h)).join(', ')}`,
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+    
+    // Find column indices - ENHANCED DEBUGGING
+    const periodsIndices = getFlexibleColumnIndices(periodsHeaders, ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+    console.log('Column indices:', periodsIndices);
+    console.log('Searching for columns:', ['municipio', 'id_indicador', 'tipo de dato', 'codigo']);
+    console.log('Available headers:', periodsHeaders);
+    
+    // Manual check for tipo de dato column
+    const tipoColumnIndex = periodsHeaders.indexOf('tipo de dato');
+    const tipoColumnAlt1 = periodsHeaders.indexOf('tipo_de_dato');
+    const tipoColumnAlt2 = periodsHeaders.indexOf('tipo');
+    console.log('Manual column search:');
+    console.log('  "tipo de dato":', tipoColumnIndex);
+    console.log('  "tipo_de_dato":', tipoColumnAlt1);
+    console.log('  "tipo":', tipoColumnAlt2);
+    
+    if (!periodsIndices.valid) {
+      ui.alert('Error', 'Required columns not found in periods dataset.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Create periods lookup and analyze first 10 rows
+    const periodsLookup = new Map();
+    const analysisData = [];
+    
+    for (let i = 0; i < Math.min(10, periodsRows.length); i++) {
+      const row = periodsRows[i];
+      const key = `${row[periodsIndices.municipio]}_${row[periodsIndices.id_indicador]}_${row[periodsIndices.tipo_de_dato]}_${row[periodsIndices.codigo]}`;
+      const periodValue = row[selectedPeriodIndex];
+      
+      periodsLookup.set(key, periodValue);
+      
+      analysisData.push({
+        rowNum: i + 2,
+        municipio: row[periodsIndices.municipio],
+        id_indicador: row[periodsIndices.id_indicador],
+        tipo: row[periodsIndices.tipo_de_dato],
+        codigo: row[periodsIndices.codigo],
+        period: periodValue,
+        key: key
+      });
+      
+      console.log(`Row ${i + 2}: ${key} -> "${periodValue}"`);
+    }
+    
+    // Build detailed report
+    let report = `FORMULA GENERATION DEBUG REPORT:\n\n`;
+    report += `Periods Dataset: "${periodsDatasetName}"\n`;
+    report += `Selected Period: "${selectedPeriod}"\n`;
+    report += `Period Column Index: ${selectedPeriodIndex}\n`;
+    report += `Total Rows: ${periodsRows.length}\n\n`;
+    
+    report += `PERIODS DATASET ANALYSIS:\n`;
+    report += `Total Headers: ${periodsHeaders.length}\n`;
+    report += `Headers: ${periodsHeaders.join(', ')}\n\n`;
+    
+    report += `COLUMN MAPPING ANALYSIS:\n`;
+    report += `Looking for: municipio, id_indicador, tipo de dato, codigo\n`;
+    report += `Found indices: ${JSON.stringify(periodsIndices)}\n`;
+    
+    // Check for alternative column names
+    const altTipoIndex1 = periodsHeaders.indexOf('tipo_de_dato');
+    const altTipoIndex2 = periodsHeaders.indexOf('tipo');
+    if (altTipoIndex1 !== -1 || altTipoIndex2 !== -1) {
+      report += `Alternative "tipo" columns found:\n`;
+      if (altTipoIndex1 !== -1) report += `  "tipo_de_dato" at index ${altTipoIndex1}\n`;
+      if (altTipoIndex2 !== -1) report += `  "tipo" at index ${altTipoIndex2}\n`;
+    }
+    report += `\n`;
+    
+    report += `FIRST 10 ROWS ANALYSIS:\n`;
+    analysisData.forEach(data => {
+      report += `Row ${data.rowNum}: ${data.municipio} | ${data.tipo} | ${data.codigo}\n`;
+      report += `  Period Value: "${data.period}"\n`;
+      report += `  Lookup Key: ${data.key}\n\n`;
+    });
+    
+    report += `COMPONENTS DATA SHEET CONFIGURATION:\n`;
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const componentsDataSheet = scriptProperties.getProperty('COMPONENTS_DATA_SHEET_NAME');
+    if (componentsDataSheet) {
+      report += `✅ Configured: "${componentsDataSheet}"\n`;
+      
+      // Test if sheet exists
+      const testSheet = ss.getSheetByName(componentsDataSheet);
+      if (testSheet) {
+        report += `✅ Sheet exists and accessible\n`;
+      } else {
+        report += `❌ Sheet not found - reconfigure needed\n`;
+      }
+    } else {
+      report += `❌ Not configured - run "Configure Components Data Sheet"\n`;
+    }
+    
+    report += `\nNEXT STEPS:\n`;
+    report += `1. Verify period values are not empty\n`;
+    report += `2. Check components data sheet configuration\n`;
+    report += `3. Try running formula generation again\n`;
+    
+    ui.alert('Debug Results', report, ui.ButtonSet.OK);
+    
+  } catch (error) {
+    console.error('Debug error:', error);
+    ui.alert('Debug Error', `Error during debug: ${error.message}`, ui.ButtonSet.OK);
+  }
+}
+
+/**
+ * Debug function for periods dataset creation issues
+ */
+function debugPeriodsDatasetCreation() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Ask user to select the combined dataset sheet (source)
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  const sourceResult = ui.prompt(
+    'Debug Periods Dataset Creation - Select Combined Dataset',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your COMBINED dataset sheet (source):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (sourceResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const sourceName = sourceResult.getResponseText().trim();
+  const sourceSheet = ss.getSheetByName(sourceName);
+  
+  if (!sourceSheet) {
+    ui.alert('Error', `Sheet "${sourceName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
+  try {
+    // Get source data
+    const sourceData = sourceSheet.getDataRange().getValues();
+    const sourceHeaders = sourceData[0];
+    const sourceRows = sourceData.slice(1);
+    
+    console.log('=== PERIODS DATASET CREATION DEBUG ===');
+    console.log('Source sheet:', sourceName);
+    console.log('Source headers:', sourceHeaders);
+    
+    // Find source column indices using CommonHelpers
+    const columnIndices = getColumnIndices(sourceHeaders, [
+      'municipio', 'id_indicador', 'eje', 'tema', 'tipo de dato', 'nombre', 'codigo'
+    ]);
+    
+    console.log('Column indices result:', columnIndices);
+    
+    // Check the first few source rows
+    const sampleData = [];
+    for (let i = 0; i < Math.min(5, sourceRows.length); i++) {
+      const row = sourceRows[i];
+      sampleData.push({
+        rowNum: i + 2,
+        municipio: row[columnIndices.municipio],
+        id_indicador: row[columnIndices.id_indicador],
+        eje: row[columnIndices.eje],
+        tema: row[columnIndices.tema],
+        tipo_de_dato: row[columnIndices.tipo_de_dato],
+        nombre: row[columnIndices.nombre],
+        codigo: row[columnIndices.codigo]
+      });
+      
+      console.log(`Source row ${i + 2}:`, {
+        municipio: row[columnIndices.municipio],
+        tipo_de_dato: row[columnIndices.tipo_de_dato],
+        codigo: row[columnIndices.codigo]
+      });
+    }
+    
+    // Build detailed report
+    let report = `PERIODS DATASET CREATION DEBUG:\n\n`;
+    report += `Combined Dataset: "${sourceName}"\n`;
+    report += `Total Rows: ${sourceRows.length}\n\n`;
+    
+    report += `COLUMN HEADERS ANALYSIS:\n`;
+    report += `Total Headers: ${sourceHeaders.length}\n`;
+    report += `Headers: ${sourceHeaders.join(', ')}\n\n`;
+    
+    report += `COLUMN MAPPING RESULTS:\n`;
+    report += `Looking for: municipio, id_indicador, eje, tema, tipo de dato, nombre, codigo\n`;
+    Object.entries(columnIndices).forEach(([key, value]) => {
+      if (key !== 'valid') {
+        const originalKey = key.replace('_', ' ');
+        report += `  "${originalKey}": index ${value} ${value === -1 ? '❌ NOT FOUND' : '✅'}\n`;
+      }
+    });
+    report += `\nMapping Valid: ${columnIndices.valid ? '✅ YES' : '❌ NO'}\n\n`;
+    
+    report += `SAMPLE SOURCE DATA ANALYSIS:\n`;
+    sampleData.forEach(data => {
+      report += `Row ${data.rowNum}: ${data.municipio} | "${data.tipo_de_dato}" | ${data.codigo}\n`;
+    });
+    
+    report += `\nPROBLEM DIAGNOSIS:\n`;
+    if (!columnIndices.valid) {
+      report += `❌ Some required columns are missing from your combined dataset.\n`;
+    } else if (columnIndices.tipo_de_dato === -1) {
+      report += `❌ "tipo de dato" column not found in combined dataset.\n`;
+      report += `Available headers: ${sourceHeaders.join(', ')}\n`;
+    } else {
+      const hasBlankTipo = sampleData.some(data => !data.tipo_de_dato || data.tipo_de_dato === '');
+      if (hasBlankTipo) {
+        report += `❌ "tipo de dato" column found but contains blank values.\n`;
+        report += `This suggests your combined dataset wasn't created properly.\n`;
+      } else {
+        report += `✅ "tipo de dato" column found and has data.\n`;
+        report += `Values found: ${sampleData.map(d => `"${d.tipo_de_dato}"`).join(', ')}\n`;
+      }
+    }
+    
+    report += `\nRECOMMENDED ACTIONS:\n`;
+    if (!columnIndices.valid) {
+      report += `1. Check your combined dataset has all required columns\n`;
+      report += `2. Regenerate your combined dataset if needed\n`;
+    } else if (columnIndices.tipo_de_dato === -1) {
+      report += `1. Check column name in combined dataset (should be "tipo de dato")\n`;
+      report += `2. Regenerate combined dataset to ensure proper column creation\n`;
+    } else {
+      const hasBlankTipo = sampleData.some(data => !data.tipo_de_dato || data.tipo_de_dato === '');
+      if (hasBlankTipo) {
+        report += `1. Your combined dataset creation process isn't filling "tipo de dato"\n`;
+        report += `2. Check if your source components/indicators sheets have the data\n`;
+        report += `3. Regenerate combined dataset with proper data mapping\n`;
+      } else {
+        report += `1. Combined dataset looks good - periods dataset should work\n`;
+        report += `2. Try recreating your periods dataset\n`;
+      }
+    }
+    
+    ui.alert('Periods Dataset Creation Debug', report, ui.ButtonSet.OK);
+    
+  } catch (error) {
+    console.error('Periods dataset creation debug error:', error);
+    ui.alert('Debug Error', `Error during debug: ${error.message}`, ui.ButtonSet.OK);
+  }
+}}
