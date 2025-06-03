@@ -1472,7 +1472,9 @@ function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculat
     finalFormula = finalFormula.replace(regex, cellRef);
   });
   
-  if (!finalFormula.startsWith('=') && finalFormula.trim() !== '') {
+  // ENHANCED FIX: Safe string check before using startsWith
+  if (finalFormula && typeof finalFormula === 'string' && 
+      !finalFormula.startsWith('=') && finalFormula.trim() !== '') {
     finalFormula = '=' + finalFormula;
   }
   
