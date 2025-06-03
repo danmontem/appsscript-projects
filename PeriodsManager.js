@@ -793,6 +793,203 @@ function refreshAllPeriodsData() {
 }
 
 // =============================================
+// SMART CALCULATION REFRESH SYSTEM
+// =============================================
+
+/**
+ * Smart refresh calculation formulas when periods change (SINGLE ↔ SUM)
+ * Preserves manual entries while updating formula types and date ranges
+ */
+function smartRefreshCalculationFormulas() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Ask user for the periods dataset (source of truth for current periods)
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  const periodsDatasetResult = ui.prompt(
+    'Select Periods Dataset (SOURCE)',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your periods dataset (source of current periods):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (periodsDatasetResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const periodsDatasetName = periodsDatasetResult.getResponseText().trim();
+  const periodsDataset = ss.getSheetByName(periodsDatasetName);
+  
+  if (!periodsDataset) {
+    ui.alert('Error', `Periods dataset "${periodsDatasetName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Ask user for the calculations sheet (target with formulas to update)
+  const calculationsResult = ui.prompt(
+    'Select Calculations Sheet (TARGET)',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your calculations sheet (contains formulas to update):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (calculationsResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const calculationsSheetName = calculationsResult.getResponseText().trim();
+  const calculationsSheet = ss.getSheetByName(calculationsSheetName);
+  
+  if (!calculationsSheet) {
+    ui.alert('Error', `Calculations sheet "${calculationsSheetName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Ask user for components dataset (for formula references)
+  const componentsResult = ui.prompt(
+    'Select Components Dataset',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your components dataset (for formula references):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (componentsResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const componentsSheetName = componentsResult.getResponseText().trim();
+  const componentsSheet = ss.getSheetByName(componentsSheetName);
+  
+  if (!componentsSheet) {
+    ui.alert('Error', `Components sheet "${componentsSheetName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
+  // Ask which evaluation period to refresh
+  const periodResult = ui.prompt(
+    'Select Evaluation Period to Refresh',
+    `Available periods:\n${EVALUATION_PERIOD_COLUMNS.join('\n')}\n\nEnter the period name to refresh formulas for:`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (periodResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const selectedPeriod = periodResult.getResponseText().trim();
+  
+  // Confirm before proceeding
+  const confirmResult = ui.alert(
+    'Confirm Smart Formula Refresh',
+    `This will intelligently refresh calculation formulas for:\n\n` +
+    `• Periods source: "${periodsDatasetName}"\n` +
+    `• Calculations target: "${calculationsSheetName}"\n` +
+    `• Components reference: "${componentsSheetName}"\n` +
+    `• Period: "${selectedPeriod}"\n\n` +
+    `✅ Will update formulas when period types change (SINGLE ↔ SUM)\n` +
+    `✅ Will preserve manual formula entries\n` +
+    `✅ Will update date ranges when periods change\n\n` +
+    `Continue?`,
+    ui.ButtonSet.YES_NO
+  );
+  
+  if (confirmResult !== ui.Button.YES) {
+    return;
+  }
+  
+  // Perform the smart refresh
+  performSmartFormulaRefresh(periodsDataset, calculationsSheet, componentsSheet, selectedPeriod, ss);
+}
+
+/**
+ * Core logic for smart formula refresh
+ */
+function performSmartFormulaRefresh(periodsDataset, calculationsSheet, componentsSheet, selectedPeriod, ss) {
+  const ui = SpreadsheetApp.getUi();
+  
+  console.log('=== SMART FORMULA REFRESH START ===');
+  const startTime = new Date();
+  
+  // Get current periods data
+  const periodsData = periodsDataset.getDataRange().getValues();
+  const periodsHeaders = periodsData[0];
+  const periodsRows = periodsData.slice(1);
+  
+  // Get current calculations data
+  const calculationsData = calculationsSheet.getDataRange().getValues();
+  const calculationsHeaders = calculationsData[0];
+  const calculationsRows = calculationsData.slice(1);
+  
+  // Find the column with formulas for the selected period
+  const formulaColumnName = `Calculo_${selectedPeriod}`;
+  const formulaColumnIndex = calculationsHeaders.indexOf(formulaColumnName);
+  
+  if (formulaColumnIndex === -1) {
+    ui.alert('Error', `Formula column "${formulaColumnName}" not found in calculations sheet.\n\nAvailable columns: ${calculationsHeaders.join(', ')}`, ui.ButtonSet.OK);
+    return;
+  }
+  
+  console.log(`Found formula column: ${formulaColumnName} at index ${formulaColumnIndex}`);
+  
+  // Build current periods lookup
+  const currentPeriodsLookup = buildPeriodsLookup(periodsData, periodsHeaders, selectedPeriod);
+  console.log(`Built periods lookup with ${currentPeriodsLookup.size} entries`);
+  
+  // Analyze existing formulas and determine which need updates
+  const formulaAnalysis = analyzeExistingFormulas(calculationsRows, calculationsHeaders, formulaColumnIndex, currentPeriodsLookup);
+  
+  console.log(`Formula analysis results:`);
+  console.log(`- Total formulas: ${formulaAnalysis.totalFormulas}`);
+  console.log(`- Manual entries: ${formulaAnalysis.manualEntries}`);
+  console.log(`- Auto-generated: ${formulaAnalysis.autoGenerated}`);
+  console.log(`- Period type changes: ${formulaAnalysis.periodTypeChanges}`);
+  console.log(`- Date range changes: ${formulaAnalysis.dateRangeChanges}`);
+  console.log(`- Need updates: ${formulaAnalysis.needsUpdate.length}`);
+  
+  if (formulaAnalysis.needsUpdate.length === 0) {
+    ui.alert(
+      'No Updates Needed',
+      `Smart analysis found no formulas that need updating:\n\n` +
+      `• Total formulas analyzed: ${formulaAnalysis.totalFormulas}\n` +
+      `• Manual entries preserved: ${formulaAnalysis.manualEntries}\n` +
+      `• Period type changes detected: ${formulaAnalysis.periodTypeChanges}\n` +
+      `• Date range changes detected: ${formulaAnalysis.dateRangeChanges}\n\n` +
+      `All formulas are up to date!`,
+      ui.ButtonSet.OK
+    );
+    return;
+  }
+  
+  // Update only the formulas that need changes
+  const updateResults = updateChangedFormulas(
+    calculationsSheet, 
+    formulaAnalysis.needsUpdate, 
+    currentPeriodsLookup, 
+    componentsSheet.getName(),
+    formulaColumnIndex
+  );
+  
+  const endTime = new Date();
+  const executionTime = (endTime - startTime) / 1000;
+  
+  console.log('=== SMART FORMULA REFRESH COMPLETE ===');
+  
+  // Success message
+  ui.alert(
+    'Smart Formula Refresh Complete!',
+    `✅ Successfully completed smart formula refresh!\n\n` +
+    `📊 Analysis Results:\n` +
+    `• Total formulas: ${formulaAnalysis.totalFormulas}\n` +
+    `• Manual entries preserved: ${formulaAnalysis.manualEntries}\n` +
+    `• Formulas updated: ${updateResults.updated}\n` +
+    `• Period type changes: ${formulaAnalysis.periodTypeChanges}\n` +
+    `• Date range changes: ${formulaAnalysis.dateRangeChanges}\n\n` +
+    `⏱️ Execution time: ${executionTime.toFixed(1)} seconds\n\n` +
+    `🎉 Your calculation formulas are now synchronized with current periods!`,
+    ui.ButtonSet.OK
+  );
+}
+
+// =============================================
 // CALCULATION GENERATION
 // =============================================
 
@@ -1464,4 +1661,258 @@ function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculat
   
   console.log(`Final formula: ${finalFormula}`);
   return finalFormula;
+}
+
+// =============================================
+// SMART FORMULA REFRESH HELPER FUNCTIONS
+// =============================================
+
+/**
+ * Build periods lookup from current periods data
+ */
+function buildPeriodsLookup(periodsData, periodsHeaders, selectedPeriod) {
+  const periodsLookup = new Map();
+  const periodsRows = periodsData.slice(1);
+  
+  // Get column indices
+  const municipioIndex = periodsHeaders.indexOf('municipio');
+  const idIndicadorIndex = periodsHeaders.indexOf('id_indicador');
+  const tipoIndex = periodsHeaders.indexOf('tipo de dato');
+  const codigoIndex = periodsHeaders.indexOf('codigo');
+  const selectedPeriodIndex = periodsHeaders.indexOf(selectedPeriod);
+  
+  if (selectedPeriodIndex === -1) {
+    console.log(`Warning: Period ${selectedPeriod} not found in periods dataset`);
+    return periodsLookup;
+  }
+  
+  periodsRows.forEach(row => {
+    const municipio = row[municipioIndex];
+    const idIndicador = row[idIndicadorIndex];
+    const tipo = row[tipoIndex];
+    const codigo = row[codigoIndex];
+    const period = row[selectedPeriodIndex];
+    
+    if (municipio && codigo && period) {
+      const key = `${municipio}_${idIndicador}_${tipo}_${codigo}`;
+      periodsLookup.set(key, period);
+    }
+  });
+  
+  return periodsLookup;
+}
+
+/**
+ * Analyze existing formulas to determine what needs updating
+ */
+function analyzeExistingFormulas(calculationsRows, calculationsHeaders, formulaColumnIndex, currentPeriodsLookup) {
+  const analysis = {
+    totalFormulas: 0,
+    manualEntries: 0,
+    autoGenerated: 0,
+    periodTypeChanges: 0,
+    dateRangeChanges: 0,
+    needsUpdate: []
+  };
+  
+  // Get column indices for calculations sheet
+  const municipioIndex = calculationsHeaders.indexOf('municipio');
+  const idIndicadorIndex = calculationsHeaders.indexOf('id_indicador');
+  const tipoIndex = calculationsHeaders.indexOf('tipo de dato');
+  const codigoIndex = calculationsHeaders.indexOf('codigo');
+  
+  calculationsRows.forEach((row, rowIndex) => {
+    const actualRowNum = rowIndex + 2; // +2 for 1-based indexing and header
+    const municipio = row[municipioIndex];
+    const idIndicador = row[idIndicadorIndex];
+    const tipo = row[tipoIndex];
+    const codigo = row[codigoIndex];
+    const currentFormula = row[formulaColumnIndex];
+    
+    // Skip if no codigo or not a component
+    if (!codigo || tipo !== 'Componente') {
+      return;
+    }
+    
+    analysis.totalFormulas++;
+    
+    // Get current period for this component
+    const lookupKey = `${municipio}_${idIndicador}_${tipo}_${codigo}`;
+    const currentPeriod = currentPeriodsLookup.get(lookupKey);
+    
+    if (!currentPeriod) {
+      console.log(`No period found for: ${lookupKey}`);
+      return;
+    }
+    
+    // Analyze the existing formula
+    const formulaAnalysis = analyzeFormulaVsPeriod(currentFormula, currentPeriod, codigo);
+    
+    if (formulaAnalysis.isManual) {
+      analysis.manualEntries++;
+      console.log(`Manual entry preserved at row ${actualRowNum}: ${codigo}`);
+    } else {
+      analysis.autoGenerated++;
+      
+      if (formulaAnalysis.needsUpdate) {
+        analysis.needsUpdate.push({
+          rowIndex: rowIndex,
+          actualRowNum: actualRowNum,
+          municipio: municipio,
+          codigo: codigo,
+          currentFormula: currentFormula,
+          currentPeriod: currentPeriod,
+          changeType: formulaAnalysis.changeType,
+          lookupKey: lookupKey
+        });
+        
+        if (formulaAnalysis.changeType === 'PERIOD_TYPE') {
+          analysis.periodTypeChanges++;
+        } else if (formulaAnalysis.changeType === 'DATE_RANGE') {
+          analysis.dateRangeChanges++;
+        }
+        
+        console.log(`Formula needs update at row ${actualRowNum}: ${codigo} (${formulaAnalysis.changeType})`);
+      }
+    }
+  });
+  
+  return analysis;
+}
+
+/**
+ * Analyze a single formula against current period to determine if update is needed
+ */
+function analyzeFormulaVsPeriod(currentFormula, currentPeriod, codigo) {
+  const result = {
+    isManual: false,
+    needsUpdate: false,
+    changeType: null
+  };
+  
+  // Check if it's a manual entry (not auto-generated)
+  if (!currentFormula || 
+      !currentFormula.startsWith('=CALCULATE_INDICATOR') || 
+      !currentFormula.includes(codigo)) {
+    result.isManual = true;
+    return result;
+  }
+  
+  try {
+    // Convert current period to formula format
+    const expectedDateRange = convertNormalizedPeriodToFormula(currentPeriod);
+    const expectedIsSingle = !expectedDateRange.includes('-');
+    const expectedType = expectedIsSingle ? 'SINGLE' : 'SUM';
+    
+    // Extract current formula type and date range
+    const currentIsSingle = currentFormula.includes('"SINGLE(');
+    const currentType = currentIsSingle ? 'SINGLE' : 'SUM';
+    
+    // Extract current date range from formula
+    const dateRangeMatch = currentFormula.match(new RegExp(`${codigo}:([^"]+)`));
+    const currentDateRange = dateRangeMatch ? dateRangeMatch[1] : null;
+    
+    // Check for period type change (SINGLE ↔ SUM)
+    if (currentType !== expectedType) {
+      result.needsUpdate = true;
+      result.changeType = 'PERIOD_TYPE';
+      console.log(`Period type change for ${codigo}: ${currentType} → ${expectedType}`);
+      return result;
+    }
+    
+    // Check for date range change
+    if (currentDateRange && currentDateRange !== expectedDateRange) {
+      result.needsUpdate = true;
+      result.changeType = 'DATE_RANGE';
+      console.log(`Date range change for ${codigo}: ${currentDateRange} → ${expectedDateRange}`);
+      return result;
+    }
+    
+    console.log(`Formula up to date for ${codigo}: ${currentType}(${currentDateRange})`);
+    
+  } catch (error) {
+    console.log(`Error analyzing formula for ${codigo}: ${error.message}`);
+    result.isManual = true; // Treat errors as manual entries to preserve them
+  }
+  
+  return result;
+}
+
+/**
+ * Update only the formulas that have changed
+ */
+function updateChangedFormulas(calculationsSheet, needsUpdate, currentPeriodsLookup, componentsSheetName, formulaColumnIndex) {
+  const results = {
+    updated: 0,
+    errors: 0
+  };
+  
+  // Build component row lookup for sheet references
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const componentsSheet = ss.getSheetByName(componentsSheetName);
+  const componentsData = componentsSheet.getDataRange().getValues();
+  const componentsHeaders = componentsData[0];
+  const componentsRows = componentsData.slice(1);
+  
+  const componentRowLookup = new Map();
+  const municipioIndex = componentsHeaders.indexOf('municipio');
+  const codigoIndex = componentsHeaders.findIndex(h => h.includes('codigo') || h.includes('código'));
+  
+  if (municipioIndex !== -1 && codigoIndex !== -1) {
+    componentsRows.forEach((row, index) => {
+      const municipio = row[municipioIndex];
+      const codigo = row[codigoIndex];
+      if (municipio && codigo) {
+        const key = `${municipio}_${codigo}`;
+        const actualRowNum = index + 2;
+        componentRowLookup.set(key, actualRowNum);
+      }
+    });
+  }
+  
+  console.log(`Built component lookup for formula updates: ${componentRowLookup.size} entries`);
+  
+  // Update each formula that needs changes
+  needsUpdate.forEach(updateInfo => {
+    try {
+      const period = updateInfo.currentPeriod;
+      const codigo = updateInfo.codigo;
+      const municipio = updateInfo.municipio;
+      
+      // Generate new formula
+      const formulaDateRange = convertNormalizedPeriodToFormula(period);
+      const municipioCell = `A${updateInfo.actualRowNum}`; // Assuming municipio is in column A
+      
+      // Get component row reference
+      const componentLookupKey = `${municipio}_${codigo}`;
+      const componentRowNum = componentRowLookup.get(componentLookupKey);
+      
+      if (!componentRowNum) {
+        console.log(`Component not found for update: ${componentLookupKey}`);
+        results.errors++;
+        return;
+      }
+      
+      const componentRowRef = `${componentsSheetName}!${componentRowNum}:${componentRowNum}`;
+      
+      let newFormula;
+      if (formulaDateRange.includes('-')) {
+        newFormula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+      } else {
+        newFormula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+      }
+      
+      // Update the cell
+      calculationsSheet.getRange(updateInfo.actualRowNum, formulaColumnIndex + 1).setFormula(newFormula);
+      results.updated++;
+      
+      console.log(`Updated formula at row ${updateInfo.actualRowNum}: ${codigo} → ${newFormula}`);
+      
+    } catch (error) {
+      console.log(`Error updating formula for ${updateInfo.codigo}: ${error.message}`);
+      results.errors++;
+    }
+  });
+  
+  return results;
 }
