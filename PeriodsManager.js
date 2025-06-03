@@ -1209,6 +1209,28 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   console.log('Starting optimized formula generation...');
   const startTime = new Date();
   
+  // Ask user for components dataset sheet name
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  const componentsSheetResult = ui.prompt(
+    'Select Components Dataset Sheet',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your COMPONENTS dataset sheet (for formula references):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (componentsSheetResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const componentsSheetName = componentsSheetResult.getResponseText().trim();
+  const componentsSheet = ss.getSheetByName(componentsSheetName);
+  
+  if (!componentsSheet) {
+    ui.alert('Error', `Components sheet "${componentsSheetName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
   // Get data
   const periodsData = periodsDataset.getDataRange().getValues();
   const periodsHeaders = periodsData[0];
@@ -1252,8 +1274,8 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   destinationSheet.getRange(1, calculationColumnIndex).setValue(calculationColumnName);
   destinationSheet.getRange(1, calculationColumnIndex).setFontWeight('bold').setBackground('#e8f4fd');
   
-  // Generate formulas in batch - PORTABLE VERSION (no more hardcoded sheet references)
-  const formulas = generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex);
+  // Generate formulas in batch - NOW WITH PROPER SHEET REFERENCE
+  const formulas = generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex, componentsSheetName, destHeaders);
   
   // Write all formulas at once
   if (formulas.length > 0) {
@@ -1270,10 +1292,10 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
 }
 
 /**
- * Generate formulas in batch for optimization - PORTABLE VERSION
- * Fixed manual period handling and hardcoded sheet references
+ * Generate formulas in batch for optimization - FIXED VERSION WITH PROPER SHEET REFERENCES
+ * Now generates proper sheet row references instead of timestamps
  */
-function generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex) {
+function generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex, componentsSheetName, destHeaders) {
   const formulas = [];
   
   destRows.forEach((row, rowIndex) => {
@@ -1305,19 +1327,18 @@ function generateFormulasBatch(destRows, destIndices, periodsLookup, calculation
         // Period needs manual entry (should not reach formula generation)
         formula = `=IFERROR("MANUAL_ENTRY_NEEDED_${codigo}", "")`;
       } else {
-        // FIXED: Valid period found (including manually entered ones)
+        // FIXED: Valid period found - now generates proper sheet row reference
         try {
           const formulaDateRange = convertNormalizedPeriodToFormula(period);
           const municipioCell = `${getColumnLetter(destIndices.municipio + 1)}${actualRowNum}`;
           
-          // FIXED: Remove hardcoded BD_componentes reference
-          // Now uses timestamp for auto-refresh instead of hardcoded sheet reference
-          const timestamp = new Date().getTime();
+          // FIXED: Generate proper sheet row reference instead of timestamp
+          const componentRowRef = `${componentsSheetName}!${actualRowNum}:${actualRowNum}`;
           
           if (formulaDateRange.includes('-')) {
-            formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${timestamp})`;
+            formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
           } else {
-            formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${timestamp})`;
+            formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
           }
         } catch (error) {
           console.log(`Error processing period "${period}" for ${codigo}: ${error.message}`);
