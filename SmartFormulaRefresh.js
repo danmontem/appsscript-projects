@@ -144,6 +144,10 @@ function performSmartFormulaRefresh(sheets, selectedPeriod, ui) {
     const calcHeaders = calcData[0];
     const calcRows = calcData.slice(1);
     
+    // FIXED: Get formulas instead of values for the formula column
+    const calcFormulas = sheets.calculations.getDataRange().getFormulas();
+    const calcFormulaRows = calcFormulas.slice(1);
+    
     // Find formula column
     const formulaColumnName = `Calculo_${selectedPeriod}`;
     const formulaColumnIndex = calcHeaders.indexOf(formulaColumnName);
@@ -159,8 +163,8 @@ function performSmartFormulaRefresh(sheets, selectedPeriod, ui) {
     const periodsLookup = buildCurrentPeriodsLookup(periodsData, periodsHeaders, selectedPeriod);
     console.log(`Built periods lookup: ${periodsLookup.size} entries`);
     
-    // Analyze what needs updating
-    const analysis = analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, periodsLookup);
+    // FIXED: Analyze formulas using the formula data, not the calculated values
+    const analysis = analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, periodsLookup, calcFormulaRows);
     
     console.log(`Analysis: ${analysis.total} total, ${analysis.needsUpdate.length} need updates, ${analysis.manual} manual`);
     
@@ -230,7 +234,7 @@ function buildCurrentPeriodsLookup(periodsData, periodsHeaders, selectedPeriod) 
 /**
  * Analyze which formulas need updates
  */
-function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, periodsLookup) {
+function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, periodsLookup, calcFormulaRows) {
   const analysis = {
     total: 0,
     manual: 0,
@@ -250,25 +254,21 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
     const id = row[idIndex];
     const tipo = row[tipoIndex];
     const codigo = row[codigoIndex];
-    const currentFormula = row[formulaColumnIndex];
     
-    // ENHANCED DEBUG: Log first few rows with safer logging and formula inspection
+    // FIXED: Get the actual formula from the formula array, not the calculated value
+    const currentFormula = calcFormulaRows[rowIndex] ? calcFormulaRows[rowIndex][formulaColumnIndex] : '';
+    
+    // ENHANCED DEBUG: Log first few rows with safer logging and actual formula inspection
     if (rowIndex < 3) {
       const safeValue = currentFormula === null ? 'null' : 
                        currentFormula === undefined ? 'undefined' : 
                        typeof currentFormula === 'string' ? `"${currentFormula}"` : 
                        String(currentFormula);
-      console.log(`Row ${actualRowNum}: formula type = ${typeof currentFormula}, value = ${safeValue}`);
+      console.log(`Row ${actualRowNum}: formula type = ${typeof currentFormula}, formula = ${safeValue}`);
       
-      // ADDITIONAL: Check if Google Sheets is returning the formula vs the value
-      try {
-        const cellRange = sheets.calculations.getRange(actualRowNum, formulaColumnIndex + 1);
-        const actualFormula = cellRange.getFormula();
-        const displayedValue = cellRange.getDisplayValue();
-        console.log(`Row ${actualRowNum} CELL CHECK: formula="${actualFormula}", displayed="${displayedValue}"`);
-      } catch (e) {
-        console.log(`Row ${actualRowNum} CELL CHECK: Error reading cell: ${e.message}`);
-      }
+      // Also show what the old method was returning
+      const oldValue = row[formulaColumnIndex];
+      console.log(`Row ${actualRowNum}: old method returned = ${typeof oldValue}, value = ${oldValue}`);
     }
     
     // Only check components
@@ -296,7 +296,7 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
                          currentFormula === undefined ? 'undefined' : 
                          typeof currentFormula === 'string' ? `"${currentFormula}"` : 
                          String(currentFormula);
-        console.log(`Manual entry detected at row ${actualRowNum}: ${codigo}, formula type: ${typeof currentFormula}, value: ${safeValue}`);
+        console.log(`Manual entry detected at row ${actualRowNum}: ${codigo}, formula type: ${typeof currentFormula}, formula: ${safeValue}`);
       }
     } else if (updateInfo.needsUpdate) {
       analysis.needsUpdate.push({
