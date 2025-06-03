@@ -1395,9 +1395,13 @@ function generateFormulasBatch(destRows, destIndices, periodsLookup, calculation
  * Generate indicator formula for destination sheet (optimized)
  */
 function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculationColumn, rows, columnIndices) {
+  console.log(`Processing indicator formula: "${formulaText}" at row ${currentRow}`);
+  
   const componentCodes = extractComponentCodes(formulaText);
+  console.log(`Extracted component codes: ${JSON.stringify(componentCodes)}`);
   
   if (componentCodes.length === 0) {
+    console.log(`No component codes found in formula: "${formulaText}"`);
     return '';
   }
   
@@ -1423,12 +1427,30 @@ function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculat
     }
   });
   
+  console.log(`Component lookup for ${currentMunicipio}: ${componentLookup.size} components`);
+  
   componentCodes.forEach(code => {
     const componentInfo = componentLookup.get(code.toLowerCase());
     if (componentInfo) {
       componentRefs[code] = `${calculationColumn}${componentInfo.rowNum}`;
+      console.log(`Mapped ${code} -> ${componentRefs[code]}`);
+    } else {
+      console.log(`Component not found: ${code} for municipality ${currentMunicipio}`);
     }
   });
+  
+  // SPECIAL CASE: If formula is just a single component code, make it a simple reference
+  if (componentCodes.length === 1 && formulaText.trim() === componentCodes[0]) {
+    const singleCode = componentCodes[0];
+    const cellRef = componentRefs[singleCode];
+    if (cellRef) {
+      console.log(`Simple reference case: ${formulaText} -> =${cellRef}`);
+      return `=${cellRef}`;
+    } else {
+      console.log(`Simple reference failed - component not found: ${singleCode}`);
+      return '';
+    }
+  }
   
   let finalFormula = formulaText;
   Object.entries(componentRefs).forEach(([code, cellRef]) => {
@@ -1440,5 +1462,6 @@ function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculat
     finalFormula = '=' + finalFormula;
   }
   
+  console.log(`Final formula: ${finalFormula}`);
   return finalFormula;
 }
