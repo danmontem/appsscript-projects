@@ -1298,6 +1298,32 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
 function generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex, componentsSheetName, destHeaders) {
   const formulas = [];
   
+  // Get the components sheet to build row lookup
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const componentsSheet = ss.getSheetByName(componentsSheetName);
+  const componentsData = componentsSheet.getDataRange().getValues();
+  const componentsHeaders = componentsData[0];
+  const componentsRows = componentsData.slice(1);
+  
+  // Build lookup map: "municipio_codigo" -> actual row number in components sheet
+  const componentRowLookup = new Map();
+  const municipioIndex = componentsHeaders.indexOf('municipio');
+  const codigoIndex = componentsHeaders.findIndex(h => h.includes('codigo') || h.includes('código'));
+  
+  if (municipioIndex !== -1 && codigoIndex !== -1) {
+    componentsRows.forEach((row, index) => {
+      const municipio = row[municipioIndex];
+      const codigo = row[codigoIndex];
+      if (municipio && codigo) {
+        const key = `${municipio}_${codigo}`;
+        const actualRowNum = index + 2; // +2 for 1-based indexing and header
+        componentRowLookup.set(key, actualRowNum);
+      }
+    });
+  }
+  
+  console.log(`Built component lookup with ${componentRowLookup.size} entries`);
+  
   destRows.forEach((row, rowIndex) => {
     const actualRowNum = rowIndex + 2;
     const municipio = row[destIndices.municipio];
@@ -1327,18 +1353,26 @@ function generateFormulasBatch(destRows, destIndices, periodsLookup, calculation
         // Period needs manual entry (should not reach formula generation)
         formula = `=IFERROR("MANUAL_ENTRY_NEEDED_${codigo}", "")`;
       } else {
-        // FIXED: Valid period found - now generates proper sheet row reference
+        // FIXED: Valid period found - now finds correct row in components sheet
         try {
           const formulaDateRange = convertNormalizedPeriodToFormula(period);
           const municipioCell = `${getColumnLetter(destIndices.municipio + 1)}${actualRowNum}`;
           
-          // FIXED: Generate proper sheet row reference instead of timestamp
-          const componentRowRef = `${componentsSheetName}!${actualRowNum}:${actualRowNum}`;
+          // FIXED: Find actual row in components sheet for this municipality + codigo
+          const componentLookupKey = `${municipio}_${codigo}`;
+          const componentRowNum = componentRowLookup.get(componentLookupKey);
           
-          if (formulaDateRange.includes('-')) {
-            formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+          if (componentRowNum) {
+            const componentRowRef = `${componentsSheetName}!${componentRowNum}:${componentRowNum}`;
+            
+            if (formulaDateRange.includes('-')) {
+              formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+            } else {
+              formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+            }
           } else {
-            formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+            formula = `=IFERROR("COMPONENT_NOT_FOUND_${codigo}_${municipio}", "")`;
+            console.log(`Component not found in ${componentsSheetName}: ${municipio}_${codigo}`);
           }
         } catch (error) {
           console.log(`Error processing period "${period}" for ${codigo}: ${error.message}`);
