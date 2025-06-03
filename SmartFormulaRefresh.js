@@ -252,13 +252,23 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
     const codigo = row[codigoIndex];
     const currentFormula = row[formulaColumnIndex];
     
-    // ENHANCED DEBUG: Log first few rows with safer logging
+    // ENHANCED DEBUG: Log first few rows with safer logging and formula inspection
     if (rowIndex < 3) {
       const safeValue = currentFormula === null ? 'null' : 
                        currentFormula === undefined ? 'undefined' : 
                        typeof currentFormula === 'string' ? `"${currentFormula}"` : 
                        String(currentFormula);
       console.log(`Row ${actualRowNum}: formula type = ${typeof currentFormula}, value = ${safeValue}`);
+      
+      // ADDITIONAL: Check if Google Sheets is returning the formula vs the value
+      try {
+        const cellRange = sheets.calculations.getRange(actualRowNum, formulaColumnIndex + 1);
+        const actualFormula = cellRange.getFormula();
+        const displayedValue = cellRange.getDisplayValue();
+        console.log(`Row ${actualRowNum} CELL CHECK: formula="${actualFormula}", displayed="${displayedValue}"`);
+      } catch (e) {
+        console.log(`Row ${actualRowNum} CELL CHECK: Error reading cell: ${e.message}`);
+      }
     }
     
     // Only check components
