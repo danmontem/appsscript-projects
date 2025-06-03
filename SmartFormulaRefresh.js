@@ -252,9 +252,13 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
     const codigo = row[codigoIndex];
     const currentFormula = row[formulaColumnIndex];
     
-    // DEBUG: Log first few rows to understand data types
+    // ENHANCED DEBUG: Log first few rows with safer logging
     if (rowIndex < 3) {
-      console.log(`Row ${actualRowNum}: formula type = ${typeof currentFormula}, value = "${currentFormula}"`);
+      const safeValue = currentFormula === null ? 'null' : 
+                       currentFormula === undefined ? 'undefined' : 
+                       typeof currentFormula === 'string' ? `"${currentFormula}"` : 
+                       String(currentFormula);
+      console.log(`Row ${actualRowNum}: formula type = ${typeof currentFormula}, value = ${safeValue}`);
     }
     
     // Only check components
@@ -278,7 +282,11 @@ function analyzeFormulasForUpdates(calcRows, calcHeaders, formulaColumnIndex, pe
       analysis.manual++;
       // DEBUG: Log manual entries for first few
       if (analysis.manual <= 3) {
-        console.log(`Manual entry detected at row ${actualRowNum}: ${codigo}, formula type: ${typeof currentFormula}`);
+        const safeValue = currentFormula === null ? 'null' : 
+                         currentFormula === undefined ? 'undefined' : 
+                         typeof currentFormula === 'string' ? `"${currentFormula}"` : 
+                         String(currentFormula);
+        console.log(`Manual entry detected at row ${actualRowNum}: ${codigo}, formula type: ${typeof currentFormula}, value: ${safeValue}`);
       }
     } else if (updateInfo.needsUpdate) {
       analysis.needsUpdate.push({
@@ -306,16 +314,29 @@ function checkIfFormulaNeedsUpdate(currentFormula, currentPeriod, codigo) {
     changeType: null
   };
   
-  // FIXED: Ensure currentFormula is a string and handle all falsy values
-  if (!currentFormula || typeof currentFormula !== 'string') {
+  // ENHANCED FIX: Handle all data types safely
+  // Google Sheets can return strings, numbers, booleans, null, undefined, or Date objects
+  if (currentFormula === null || 
+      currentFormula === undefined || 
+      currentFormula === '' || 
+      typeof currentFormula === 'number' || 
+      typeof currentFormula === 'boolean' || 
+      currentFormula instanceof Date) {
     result.isManual = true;
     return result;
   }
   
-  // Convert to string and trim in case it's not already
-  const formulaString = String(currentFormula).trim();
+  // Convert to string safely and trim
+  let formulaString;
+  try {
+    formulaString = String(currentFormula).trim();
+  } catch (error) {
+    console.log(`Error converting formula to string for ${codigo}: ${error.message}`);
+    result.isManual = true;
+    return result;
+  }
   
-  // Check if it's a manual entry
+  // Check if it's a manual entry or not a valid formula
   if (!formulaString || 
       !formulaString.startsWith('=CALCULATE_INDICATOR') || 
       !formulaString.includes(codigo)) {
