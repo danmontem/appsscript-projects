@@ -117,7 +117,7 @@ function concatAndOrderByIndicator() {
       if (compMun !== 0) return compMun;
       
       // 2. Sort by indicator ID (numerical)
-      const compId = Number(a[indiceId]) - Number(b[indiceId]);
+      const compId = getValueOrZero(a[indiceId]) - getValueOrZero(b[indiceId]);
       if (compId !== 0) return compId;
       
       // 3. Sort components before indicators within same municipality and ID
@@ -201,30 +201,41 @@ function extraerDatosMapeados(hoja, fuente, etiquetaTipo) {
     const encabezado = datos[0];
     const cuerpo = datos.slice(1);
 
-    const indices = Object.keys(STANDARD_COLUMN_MAPPING)
-      .filter(col => col !== "tipo de dato")
-      .map(col => {
+    // Get all column names in the correct order
+    const allColumnNames = Object.keys(STANDARD_COLUMN_MAPPING);
+    
+    // Map each column to its source column index (except "tipo de dato" which is manual)
+    const columnMappings = allColumnNames.map(col => {
+      if (col === "tipo de dato") {
+        return { name: col, index: -1, manual: true }; // Manual column
+      } else {
         const nombreCol = STANDARD_COLUMN_MAPPING[col][fuente];
         const idx = encabezado.indexOf(nombreCol);
         if (idx === -1) {
           throw new Error(`Column "${nombreCol}" not found in sheet "${hoja.getName()}"`);
         }
-        return idx;
-      });
+        return { name: col, index: idx, manual: false };
+      }
+    });
 
     return cuerpo.map(fila => {
-      const datosFila = indices.map((i, colIndex) => {
-        const value = fila[i];
-        const columnName = Object.keys(STANDARD_COLUMN_MAPPING).filter(col => col !== "tipo de dato")[colIndex];
-        
-        // Special handling for id_indicador: convert empty/blank to 0 using CommonHelpers
-        if (columnName === "id_indicador") {
-          return getValueOrZero(value);
+      // Build row data in the correct column order
+      const datosFila = columnMappings.map(mapping => {
+        if (mapping.manual) {
+          // This is the "tipo de dato" column - set the label
+          return etiquetaTipo;
+        } else {
+          const value = fila[mapping.index];
+          
+          // Special handling for id_indicador: convert empty/blank to 0 using CommonHelpers
+          if (mapping.name === "id_indicador") {
+            return getValueOrZero(value);
+          }
+          
+          return getValueOrEmpty(value);
         }
-        
-        return getValueOrEmpty(value);
       });
-      datosFila.push(etiquetaTipo); // Add "tipo de dato" at the end
+      
       return datosFila;
     });
   } catch (error) {
@@ -349,16 +360,21 @@ function refreshConcatenatedDataset() {
     const datos2 = extraerDatosMapeados(indicatorsSheet, "hoja2", "Indicador");
     const datosCombinados = datos1.concat(datos2);
 
-    // Sort data (same as original)
+    // Sort data using correct column indices from STANDARD_COLUMN_MAPPING
+    const columnOrder = Object.keys(STANDARD_COLUMN_MAPPING);
+    const municipioIndex = columnOrder.indexOf("municipio");
+    const idIndex = columnOrder.indexOf("id_indicador");
+    const tipoIndex = columnOrder.indexOf("tipo de dato");
+    
     datosCombinados.sort((a, b) => {
-      const compMun = a[0].toString().localeCompare(b[0].toString(), 'es'); // municipio
+      const compMun = a[municipioIndex].toString().localeCompare(b[municipioIndex].toString(), 'es');
       if (compMun !== 0) return compMun;
       
-      const compId = getValueOrZero(a[1]) - getValueOrZero(b[1]); // id_indicador
+      const compId = getValueOrZero(a[idIndex]) - getValueOrZero(b[idIndex]);
       if (compId !== 0) return compId;
       
-      if (a[6] === "Componente" && b[6] === "Indicador") return -1; // tipo de dato
-      if (a[6] === "Indicador" && b[6] === "Componente") return 1;
+      if (a[tipoIndex] === "Componente" && b[tipoIndex] === "Indicador") return -1;
+      if (a[tipoIndex] === "Indicador" && b[tipoIndex] === "Componente") return 1;
       
       return 0;
     });
@@ -466,10 +482,18 @@ function buildFormulaLookup(currentRows, currentHeaders, preservedFormulas) {
  * Build row key for formula lookup
  */
 function buildRowKey(row, headers) {
-  const municipio = row[headers.indexOf("municipio")] || row[0];
-  const indicadorId = getValueOrZero(row[headers.indexOf("id_indicador")] || row[1]);
-  const tipo = row[headers.indexOf("tipo de dato")] || row[6];
-  const codigo = row[headers.indexOf("codigo")] || row[5];
+  // Use proper column indices from headers or fallback to STANDARD_COLUMN_MAPPING order
+  const columnOrder = Object.keys(STANDARD_COLUMN_MAPPING);
+  
+  const municipioIndex = headers.indexOf("municipio") !== -1 ? headers.indexOf("municipio") : columnOrder.indexOf("municipio");
+  const idIndex = headers.indexOf("id_indicador") !== -1 ? headers.indexOf("id_indicador") : columnOrder.indexOf("id_indicador");
+  const tipoIndex = headers.indexOf("tipo de dato") !== -1 ? headers.indexOf("tipo de dato") : columnOrder.indexOf("tipo de dato");
+  const codigoIndex = headers.indexOf("codigo") !== -1 ? headers.indexOf("codigo") : columnOrder.indexOf("codigo");
+  
+  const municipio = row[municipioIndex];
+  const indicadorId = getValueOrZero(row[idIndex]);
+  const tipo = row[tipoIndex];
+  const codigo = row[codigoIndex];
   
   return `${municipio}_${indicadorId}_${tipo}_${codigo}`;
 }
