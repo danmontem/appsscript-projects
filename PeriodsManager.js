@@ -1209,6 +1209,28 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   console.log('Starting optimized formula generation...');
   const startTime = new Date();
   
+  // Ask user for components dataset sheet name
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  const componentsSheetResult = ui.prompt(
+    'Select Components Dataset Sheet',
+    `Available sheets: ${sheetsText}\n\nEnter the name of your COMPONENTS dataset sheet (for formula references):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (componentsSheetResult.getSelectedButton() !== ui.Button.OK) {
+    return;
+  }
+  
+  const componentsSheetName = componentsSheetResult.getResponseText().trim();
+  const componentsSheet = ss.getSheetByName(componentsSheetName);
+  
+  if (!componentsSheet) {
+    ui.alert('Error', `Components sheet "${componentsSheetName}" not found.`, ui.ButtonSet.OK);
+    return;
+  }
+  
   // Get data
   const periodsData = periodsDataset.getDataRange().getValues();
   const periodsHeaders = periodsData[0];
@@ -1252,8 +1274,8 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
   destinationSheet.getRange(1, calculationColumnIndex).setValue(calculationColumnName);
   destinationSheet.getRange(1, calculationColumnIndex).setFontWeight('bold').setBackground('#e8f4fd');
   
-  // Generate formulas in batch - PORTABLE VERSION (no more hardcoded sheet references)
-  const formulas = generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex);
+  // Generate formulas in batch - NOW WITH PROPER SHEET REFERENCE
+  const formulas = generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex, componentsSheetName, destHeaders);
   
   // Write all formulas at once
   if (formulas.length > 0) {
@@ -1270,11 +1292,37 @@ function generateFormulasFromPeriodsDataToDestination(periodsDataset, destinatio
 }
 
 /**
- * Generate formulas in batch for optimization - PORTABLE VERSION
- * Fixed manual period handling and hardcoded sheet references
+ * Generate formulas in batch for optimization - FIXED VERSION WITH PROPER SHEET REFERENCES
+ * Now generates proper sheet row references instead of timestamps
  */
-function generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex) {
+function generateFormulasBatch(destRows, destIndices, periodsLookup, calculationColumnIndex, componentsSheetName, destHeaders) {
   const formulas = [];
+  
+  // Get the components sheet to build row lookup
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const componentsSheet = ss.getSheetByName(componentsSheetName);
+  const componentsData = componentsSheet.getDataRange().getValues();
+  const componentsHeaders = componentsData[0];
+  const componentsRows = componentsData.slice(1);
+  
+  // Build lookup map: "municipio_codigo" -> actual row number in components sheet
+  const componentRowLookup = new Map();
+  const municipioIndex = componentsHeaders.indexOf('municipio');
+  const codigoIndex = componentsHeaders.findIndex(h => h.includes('codigo') || h.includes('código'));
+  
+  if (municipioIndex !== -1 && codigoIndex !== -1) {
+    componentsRows.forEach((row, index) => {
+      const municipio = row[municipioIndex];
+      const codigo = row[codigoIndex];
+      if (municipio && codigo) {
+        const key = `${municipio}_${codigo}`;
+        const actualRowNum = index + 2; // +2 for 1-based indexing and header
+        componentRowLookup.set(key, actualRowNum);
+      }
+    });
+  }
+  
+  console.log(`Built component lookup with ${componentRowLookup.size} entries`);
   
   destRows.forEach((row, rowIndex) => {
     const actualRowNum = rowIndex + 2;
@@ -1305,19 +1353,26 @@ function generateFormulasBatch(destRows, destIndices, periodsLookup, calculation
         // Period needs manual entry (should not reach formula generation)
         formula = `=IFERROR("MANUAL_ENTRY_NEEDED_${codigo}", "")`;
       } else {
-        // FIXED: Valid period found (including manually entered ones)
+        // FIXED: Valid period found - now finds correct row in components sheet
         try {
           const formulaDateRange = convertNormalizedPeriodToFormula(period);
           const municipioCell = `${getColumnLetter(destIndices.municipio + 1)}${actualRowNum}`;
           
-          // FIXED: Remove hardcoded BD_componentes reference
-          // Now uses timestamp for auto-refresh instead of hardcoded sheet reference
-          const timestamp = new Date().getTime();
+          // FIXED: Find actual row in components sheet for this municipality + codigo
+          const componentLookupKey = `${municipio}_${codigo}`;
+          const componentRowNum = componentRowLookup.get(componentLookupKey);
           
-          if (formulaDateRange.includes('-')) {
-            formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${timestamp})`;
+          if (componentRowNum) {
+            const componentRowRef = `${componentsSheetName}!${componentRowNum}:${componentRowNum}`;
+            
+            if (formulaDateRange.includes('-')) {
+              formula = `=CALCULATE_INDICATOR("SUM(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+            } else {
+              formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${componentRowRef})`;
+            }
           } else {
-            formula = `=CALCULATE_INDICATOR("SINGLE(${codigo}:${formulaDateRange})", ${municipioCell}, ${timestamp})`;
+            formula = `=IFERROR("COMPONENT_NOT_FOUND_${codigo}_${municipio}", "")`;
+            console.log(`Component not found in ${componentsSheetName}: ${municipio}_${codigo}`);
           }
         } catch (error) {
           console.log(`Error processing period "${period}" for ${codigo}: ${error.message}`);
@@ -1340,9 +1395,13 @@ function generateFormulasBatch(destRows, destIndices, periodsLookup, calculation
  * Generate indicator formula for destination sheet (optimized)
  */
 function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculationColumn, rows, columnIndices) {
+  console.log(`Processing indicator formula: "${formulaText}" at row ${currentRow}`);
+  
   const componentCodes = extractComponentCodes(formulaText);
+  console.log(`Extracted component codes: ${JSON.stringify(componentCodes)}`);
   
   if (componentCodes.length === 0) {
+    console.log(`No component codes found in formula: "${formulaText}"`);
     return '';
   }
   
@@ -1368,12 +1427,30 @@ function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculat
     }
   });
   
+  console.log(`Component lookup for ${currentMunicipio}: ${componentLookup.size} components`);
+  
   componentCodes.forEach(code => {
     const componentInfo = componentLookup.get(code.toLowerCase());
     if (componentInfo) {
       componentRefs[code] = `${calculationColumn}${componentInfo.rowNum}`;
+      console.log(`Mapped ${code} -> ${componentRefs[code]}`);
+    } else {
+      console.log(`Component not found: ${code} for municipality ${currentMunicipio}`);
     }
   });
+  
+  // SPECIAL CASE: If formula is just a single component code, make it a simple reference
+  if (componentCodes.length === 1 && formulaText.trim() === componentCodes[0]) {
+    const singleCode = componentCodes[0];
+    const cellRef = componentRefs[singleCode];
+    if (cellRef) {
+      console.log(`Simple reference case: ${formulaText} -> =${cellRef}`);
+      return `=${cellRef}`;
+    } else {
+      console.log(`Simple reference failed - component not found: ${singleCode}`);
+      return '';
+    }
+  }
   
   let finalFormula = formulaText;
   Object.entries(componentRefs).forEach(([code, cellRef]) => {
@@ -1385,5 +1462,6 @@ function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculat
     finalFormula = '=' + finalFormula;
   }
   
+  console.log(`Final formula: ${finalFormula}`);
   return finalFormula;
 }

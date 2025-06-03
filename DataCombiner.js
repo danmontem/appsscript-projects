@@ -395,7 +395,15 @@ function refreshConcatenatedDataset() {
         if (coreColumns.includes(colName)) {
           // Use fresh data for core columns
           const coreIndex = coreColumns.indexOf(colName);
-          return newRowData[coreIndex] || "";
+          const value = newRowData[coreIndex];
+          
+          // FIXED: Don't use || "" because 0 is falsy but valid
+          // Apply special handling for id_indicador to ensure 0 is preserved
+          if (colName === "id_indicador") {
+            return getValueOrZero(value);
+          } else {
+            return getValueOrEmpty(value);
+          }
         } else {
           // For calculation columns, preserve any existing data/formulas
           return ""; // Will be filled with formulas later

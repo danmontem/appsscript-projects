@@ -358,7 +358,8 @@ function getFlexibleColumnIndices(headers, requiredColumns) {
  * From EvaluationPeriodsHelpers.js
  */
 function extractComponentCodes(formulaText) {
-  const codePattern = /\b[A-Za-z]{2,}[A-Za-z0-9]*\b/g;
+  // FIXED: Updated pattern to handle codes like M3Pn (letter + number + letters)
+  const codePattern = /\b[A-Za-z][A-Za-z0-9]*[A-Za-z0-9]\b/g;
   const matches = formulaText.match(codePattern) || [];
   const excludeTerms = ['and', 'or', 'not', 'sum', 'avg', 'max', 'min', 'if', 'then', 'else'];
   
