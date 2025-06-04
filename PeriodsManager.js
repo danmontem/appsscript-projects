@@ -793,6 +793,20 @@ function refreshAllPeriodsData() {
 }
 
 // =============================================
+// SMART CALCULATION REFRESH SYSTEM
+// =============================================
+
+/**
+ * NOTE: Smart formula refresh functionality has been moved to SmartFormulaRefresh.js
+ * for better code organization and maintainability.
+ * 
+ * Use: smartRefreshCalculationFormulas() from SmartFormulaRefresh.js
+ * 
+ * This function intelligently updates calculation formulas when periods change
+ * (SINGLE ↔ SUM) while preserving manual formula entries.
+ */
+
+// =============================================
 // CALCULATION GENERATION
 // =============================================
 
@@ -1458,7 +1472,9 @@ function generateIndicatorCellFormulaOptimized(formulaText, currentRow, calculat
     finalFormula = finalFormula.replace(regex, cellRef);
   });
   
-  if (!finalFormula.startsWith('=') && finalFormula.trim() !== '') {
+  // ENHANCED FIX: Safe string check before using startsWith
+  if (finalFormula && typeof finalFormula === 'string' && 
+      !finalFormula.startsWith('=') && finalFormula.trim() !== '') {
     finalFormula = '=' + finalFormula;
   }
   

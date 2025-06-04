@@ -315,7 +315,9 @@ function refreshConcatenatedDataset() {
     const columnRange = destinationSheet.getRange(2, calcCol.index + 1, Math.min(10, currentRows.length), 1);
     const formulas = columnRange.getFormulas();
     
-    const hasAnyFormulas = formulas.some(row => row[0] && row[0].startsWith('='));
+    // ENHANCED FIX: Safe string check before using startsWith
+    const hasAnyFormulas = formulas.some(row => 
+      row[0] && typeof row[0] === 'string' && row[0].startsWith('='));
     calcCol.hasFormulas = hasAnyFormulas;
     
     console.log(`Column "${calcCol.name}": ${hasAnyFormulas ? 'HAS FORMULAS' : 'has values only'}`);
