@@ -675,6 +675,11 @@ function updatePeriodsConfiguration(ui, availableSheets, currentConfig, scriptPr
     ui.ButtonSet.OK
   );
 }
+
+/**
+ * Configure smart refresh settings
+ */
+function configureSmartRefresh() {
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const scriptProperties = PropertiesService.getScriptProperties();
@@ -832,6 +837,10 @@ function updatePeriodsConfiguration(ui, availableSheets, currentConfig, scriptPr
     ui.ButtonSet.OK
   );
 }
+
+// =============================================
+// SMART REFRESH ALL PERIODS DATA
+// =============================================
 
 /**
  * Smart refresh all periods data with manual entry preservation
