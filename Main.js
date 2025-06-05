@@ -37,6 +37,7 @@ function onOpen() {
       .addItem('Map Periods (Quick - Preset Names)', 'mapPeriodsFromExternalTableUltraFast')
       .addSeparator()
       .addItem('Generate Calculations from Periods Dataset', 'generateCalculationsFromPeriodsDataset')
+      .addItem('🔄 Smart Refresh Calculation Formulas', 'smartRefreshCalculationFormulas')
     )
     .addSeparator()
     .addSubMenu(ui.createMenu('🧮 Calculations & Formulas')
