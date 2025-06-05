@@ -31,6 +31,7 @@ function onOpen() {
       .addSeparator()
       .addItem('⚡ Smart Refresh All Periods Data', 'refreshAllPeriodsData')
       .addItem('⚙️ Configure Smart Refresh', 'configureSmartRefresh')
+      .addItem('🔧 Update Sheet Configuration', 'updateSheetConfiguration')
       .addSeparator()
       .addItem('Map Periods (Flexible - Choose Sheets)', 'mapPeriodsFromExternalTableFlexible')
       .addItem('Map Periods (Quick - Preset Names)', 'mapPeriodsFromExternalTableUltraFast')

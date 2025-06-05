@@ -475,9 +475,206 @@ function performMappingWithBatches(externalSheet, periodsDataset, externalSheetN
 // =============================================
 
 /**
- * Configure smart refresh settings
+ * Update sheet configuration without rebuilding datasets
  */
-function configureSmartRefresh() {
+function updateSheetConfiguration() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const scriptProperties = PropertiesService.getScriptProperties();
+  
+  console.log('=== UPDATE SHEET CONFIGURATION ===');
+  
+  // Get available sheets
+  const availableSheets = ss.getSheets().map(sheet => sheet.getName());
+  const sheetsText = availableSheets.join(', ');
+  
+  // Show current configuration
+  const currentConfig = {
+    combined: scriptProperties.getProperty('PERIODS_COMBINED_DATASET_NAME'),
+    periods: scriptProperties.getProperty('PERIODS_DATASET_NAME'),
+    docId: scriptProperties.getProperty('PERIODS_EXTERNAL_DOC_ID'),
+    sheetName: scriptProperties.getProperty('PERIODS_EXTERNAL_SHEET_NAME'),
+    components: scriptProperties.getProperty('CONCAT_COMPONENTS_SHEET'),
+    indicators: scriptProperties.getProperty('CONCAT_INDICATORS_SHEET'),
+    destination: scriptProperties.getProperty('CONCAT_DESTINATION_SHEET'),
+    componentsData: scriptProperties.getProperty('COMPONENTS_DATA_SHEET_NAME')
+  };
+  
+  let configDisplay = 'CURRENT CONFIGURATION:\n\n';
+  configDisplay += `📊 Dataset Configuration:\n`;
+  configDisplay += `• Components sheet: "${currentConfig.components || 'Not set'}"\n`;
+  configDisplay += `• Indicators sheet: "${currentConfig.indicators || 'Not set'}"\n`;
+  configDisplay += `• Combined dataset: "${currentConfig.combined || 'Not set'}"\n`;
+  configDisplay += `• Calculation destination: "${currentConfig.destination || 'Not set'}"\n\n`;
+  configDisplay += `📅 Periods Configuration:\n`;
+  configDisplay += `• Periods dataset: "${currentConfig.periods || 'Not set'}"\n`;
+  configDisplay += `• External document: ${currentConfig.docId || 'Not set'}\n`;
+  configDisplay += `• External sheet: "${currentConfig.sheetName || 'Not set'}"\n\n`;
+  configDisplay += `🧮 Components Data Sheet:\n`;
+  configDisplay += `• Components data: "${currentConfig.componentsData || 'Not set'}"\n\n`;
+  configDisplay += `Available sheets: ${sheetsText}\n\n`;
+  configDisplay += `Which configuration would you like to update?`;
+  
+  const choice = ui.alert(
+    'Update Sheet Configuration',
+    configDisplay,
+    ui.ButtonSet.YES_NO_CANCEL
+  );
+  
+  if (choice === ui.Button.CANCEL) return;
+  
+  if (choice === ui.Button.YES) {
+    // Update dataset configuration
+    updateDatasetConfiguration(ui, availableSheets, currentConfig, scriptProperties);
+  } else {
+    // Update periods configuration  
+    updatePeriodsConfiguration(ui, availableSheets, currentConfig, scriptProperties);
+  }
+}
+
+/**
+ * Update dataset configuration (components, indicators, destination)
+ */
+function updateDatasetConfiguration(ui, availableSheets, currentConfig, scriptProperties) {
+  const sheetsText = availableSheets.join(', ');
+  
+  // Update components sheet
+  const componentsResult = ui.prompt(
+    'Update Components Sheet',
+    `Current: "${currentConfig.components || 'Not set'}"\n\n` +
+    `Available: ${sheetsText}\n\n` +
+    `Enter new components sheet name (or press Cancel to skip):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (componentsResult.getSelectedButton() === ui.Button.OK) {
+    const newComponentsName = componentsResult.getResponseText().trim();
+    if (newComponentsName && availableSheets.includes(newComponentsName)) {
+      scriptProperties.setProperty('CONCAT_COMPONENTS_SHEET', newComponentsName);
+      scriptProperties.setProperty('COMPONENTS_DATA_SHEET_NAME', newComponentsName);
+      console.log(`Updated components sheet: ${newComponentsName}`);
+    } else {
+      ui.alert('Error', `Sheet "${newComponentsName}" not found.`, ui.ButtonSet.OK);
+      return;
+    }
+  }
+  
+  // Update indicators sheet
+  const indicatorsResult = ui.prompt(
+    'Update Indicators Sheet',
+    `Current: "${currentConfig.indicators || 'Not set'}"\n\n` +
+    `Available: ${sheetsText}\n\n` +
+    `Enter new indicators sheet name (or press Cancel to skip):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (indicatorsResult.getSelectedButton() === ui.Button.OK) {
+    const newIndicatorsName = indicatorsResult.getResponseText().trim();
+    if (newIndicatorsName && availableSheets.includes(newIndicatorsName)) {
+      scriptProperties.setProperty('CONCAT_INDICATORS_SHEET', newIndicatorsName);
+      console.log(`Updated indicators sheet: ${newIndicatorsName}`);
+    } else {
+      ui.alert('Error', `Sheet "${newIndicatorsName}" not found.`, ui.ButtonSet.OK);
+      return;
+    }
+  }
+  
+  // Update destination sheet
+  const destResult = ui.prompt(
+    'Update Destination Sheet',
+    `Current: "${currentConfig.destination || 'Not set'}"\n\n` +
+    `Available: ${sheetsText}\n\n` +
+    `Enter new destination sheet name (or press Cancel to skip):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (destResult.getSelectedButton() === ui.Button.OK) {
+    const newDestName = destResult.getResponseText().trim();
+    if (newDestName && availableSheets.includes(newDestName)) {
+      scriptProperties.setProperty('CONCAT_DESTINATION_SHEET', newDestName);
+      scriptProperties.setProperty('PERIODS_COMBINED_DATASET_NAME', newDestName);
+      console.log(`Updated destination sheet: ${newDestName}`);
+    } else {
+      ui.alert('Error', `Sheet "${newDestName}" not found.`, ui.ButtonSet.OK);
+      return;
+    }
+  }
+  
+  ui.alert(
+    'Dataset Configuration Updated!',
+    'Your dataset configuration has been updated.\n\n' +
+    'You can now use "Refresh Combined Dataset" and other functions\n' +
+    'without losing your existing data!',
+    ui.ButtonSet.OK
+  );
+}
+
+/**
+ * Update periods configuration (periods dataset, external document)
+ */
+function updatePeriodsConfiguration(ui, availableSheets, currentConfig, scriptProperties) {
+  const sheetsText = availableSheets.join(', ');
+  
+  // Update periods dataset
+  const periodsResult = ui.prompt(
+    'Update Periods Dataset Sheet',
+    `Current: "${currentConfig.periods || 'Not set'}"\n\n` +
+    `Available: ${sheetsText}\n\n` +
+    `Enter new periods dataset name (or press Cancel to skip):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (periodsResult.getSelectedButton() === ui.Button.OK) {
+    const newPeriodsName = periodsResult.getResponseText().trim();
+    if (newPeriodsName && availableSheets.includes(newPeriodsName)) {
+      scriptProperties.setProperty('PERIODS_DATASET_NAME', newPeriodsName);
+      console.log(`Updated periods dataset: ${newPeriodsName}`);
+    } else {
+      ui.alert('Error', `Sheet "${newPeriodsName}" not found.`, ui.ButtonSet.OK);
+      return;
+    }
+  }
+  
+  // Update external document (optional)
+  const extDocResult = ui.prompt(
+    'Update External Document (Optional)',
+    `Current: ${currentConfig.docId || 'Not set'}\n\n` +
+    `Enter new external document ID (or press Cancel to skip):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (extDocResult.getSelectedButton() === ui.Button.OK) {
+    const newDocId = extDocResult.getResponseText().trim();
+    if (newDocId) {
+      scriptProperties.setProperty('PERIODS_EXTERNAL_DOC_ID', newDocId);
+      console.log(`Updated external document: ${newDocId}`);
+    }
+  }
+  
+  // Update external sheet (optional)
+  const extSheetResult = ui.prompt(
+    'Update External Sheet (Optional)',
+    `Current: "${currentConfig.sheetName || 'Not set'}"\n\n` +
+    `Enter new external sheet name (or press Cancel to skip):`,
+    ui.ButtonSet.OK_CANCEL
+  );
+  
+  if (extSheetResult.getSelectedButton() === ui.Button.OK) {
+    const newSheetName = extSheetResult.getResponseText().trim();
+    if (newSheetName) {
+      scriptProperties.setProperty('PERIODS_EXTERNAL_SHEET_NAME', newSheetName);
+      console.log(`Updated external sheet: ${newSheetName}`);
+    }
+  }
+  
+  ui.alert(
+    'Periods Configuration Updated!',
+    'Your periods configuration has been updated.\n\n' +
+    'You can now use "Smart Refresh All Periods Data" and other functions\n' +
+    'without issues!',
+    ui.ButtonSet.OK
+  );
+}
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const scriptProperties = PropertiesService.getScriptProperties();
