@@ -271,22 +271,33 @@ function mapPeriodsFromExternalTableFlexible() {
 
 /**
  * ULTRA FAST VERSION: Uses preset names for quick mapping
+ * NOTE: Update these names to match your current sheet setup
  */
 function mapPeriodsFromExternalTableUltraFast() {
   const ui = SpreadsheetApp.getUi();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   
-  // Your specific configuration - you can modify these
-  const periodsDatasetName = 'Periodos_Evaluacion';
-  const sourceDocId = '10AkW5RTc-MGXh26V2sXkGxBQ0cINRVFq0-AXaSWjiHc';
-  const externalSheetName = 'Fechas_evaluación';
+  // CONFIGURABLE: Update these names to match your current setup
+  const periodsDatasetName = 'Periodos_Evaluacion'; // Update if your periods sheet has a different name
+  const sourceDocId = '10AkW5RTc-MGXh26V2sXkGxBQ0cINRVFq0-AXaSWjiHc'; // Update if using different external document
+  const externalSheetName = 'Fechas_evaluación'; // Update if external sheet has different name
   
   console.log('=== ULTRA FAST PERIODS MAPPING ===');
   
-  // Get sheets
+  // Get sheets with better error handling
   const periodsDataset = ss.getSheetByName(periodsDatasetName);
   if (!periodsDataset) {
-    ui.alert('Error', `Sheet "${periodsDatasetName}" not found.`, ui.ButtonSet.OK);
+    const availableSheets = ss.getSheets().map(sheet => sheet.getName()).join(', ');
+    ui.alert(
+      'Periods Dataset Not Found', 
+      `Sheet "${periodsDatasetName}" not found.\n\n` +
+      `Available sheets: ${availableSheets}\n\n` +
+      `Either:\n` +
+      `1. Use "Map Periods (Flexible)" to choose sheets manually\n` +
+      `2. Update the hardcoded name in this function\n` +
+      `3. Create/rename your periods dataset to "${periodsDatasetName}"`,
+      ui.ButtonSet.OK
+    );
     return;
   }
   

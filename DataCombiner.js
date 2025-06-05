@@ -273,8 +273,24 @@ function refreshConcatenatedDataset() {
   const indicatorsSheet = ss.getSheetByName(indicatorsSheetName);
   const destinationSheet = ss.getSheetByName(destinationSheetName);
   
-  if (!componentsSheet || !indicatorsSheet || !destinationSheet) {
-    ui.alert('Error', 'One or more source sheets not found. Please check sheet names.', ui.ButtonSet.OK);
+  // Validate that all sheets still exist with better error reporting
+  const missingSheets = [];
+  if (!componentsSheet) missingSheets.push(`Components: "${componentsSheetName}"`);
+  if (!indicatorsSheet) missingSheets.push(`Indicators: "${indicatorsSheetName}"`);
+  if (!destinationSheet) missingSheets.push(`Destination: "${destinationSheetName}"`);
+  
+  if (missingSheets.length > 0) {
+    const availableSheets = ss.getSheets().map(sheet => sheet.getName()).join(', ');
+    ui.alert(
+      'Sheet Configuration Issue', 
+      `The following configured sheets are missing:\n\n${missingSheets.join('\n')}\n\n` +
+      `This usually happens when sheets are renamed.\n\n` +
+      `Available sheets: ${availableSheets}\n\n` +
+      `To fix this:\n` +
+      `1. Use "Combine Components & Indicators" again to update configuration\n` +
+      `2. Or check that your sheets have the expected names`,
+      ui.ButtonSet.OK
+    );
     return;
   }
   
